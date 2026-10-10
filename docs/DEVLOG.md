@@ -63,11 +63,18 @@ Commits carry the detail of *what*; this carries the *why*.
 - Not ported yet: the music-video genre enrichment (`effectiveGenres` reads
   MusicBrainz and Deezer, which are not in v0.1), and the collection and bundle
   filters.
-- Parity status, stated plainly: the reference is the tvOS source only. The web
-  tuner is not a parity target. Its rules and schedule have diverged on purpose, so
-  it is not checked here. The Swift tests were not run, because this machine has no
-  Xcode. The Kotlin port follows the source, and the next parity step is the tvOS
-  test suite, or tvOS output on the same fixtures.
+- Parity status, stated plainly. Three checks run here, and none needs a Mac.
+  (1) The rule filter is checked against the web filter (`scripts/nostalgex-channel-filter.cjs`)
+  on a shared fixture of 400 synthetic items, for all 131 channels: the kept ids match
+  exactly. The fixture is written by `scripts/nostalgex-filter-fixture.cjs`.
+  (2) The show interleave, premiere promotion, sequel grouping and premiere timing match
+  the Swift golden vectors in `scripts/nostalgex-schedule-order-smoke.mjs`. Those vectors
+  were produced by running the Swift code on Apple Swift 6.2.1.
+  (3) The random generator matches an independent Python implementation.
+  Not checked: the day packer and the premiere placement inside it against a Swift run,
+  and the web schedule, which has diverged on purpose (premieres, sequel adjacency, the
+  6-hour refresh). For the day packer, the only oracle is the Swift code itself, so a
+  Swift run on the same fixture is the next step.
 
 - Step 1 of the first testable APK: a Jellyfin client for the music-video
   channels (`jellyfin/`). It covers sign-in with the MediaBrowser header

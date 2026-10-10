@@ -13,8 +13,9 @@ import java.time.ZonedDateTime
  * time zone are parameters, so the rules can be tested deterministically. This is the
  * only intended difference from the Swift code.
  *
- * The reference is the tvOS source only. The web tuner has its own rules and is not a
- * parity target.
+ * Checks: the tvOS source is the spec. The web filter (scripts/nostalgex-channel-filter.cjs)
+ * runs here with Node, so FilterGoldenTest checks this port against it on a shared fixture.
+ * Where the two disagree, the Swift source decides.
  */
 
 /** Per-item data computed once per filter pass, like Swift's FilterCache. */
