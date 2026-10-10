@@ -13,8 +13,8 @@ import java.time.ZonedDateTime
  * time zone are parameters, so the rules can be tested deterministically. This is the
  * only intended difference from the Swift code.
  *
- * Where the Swift code and scripts/nostalgex-channel-filter.cjs agree, the comments
- * below say so. Where Swift adds behaviour that the web filter lacks, that is kept.
+ * The reference is the tvOS source only. The web tuner has its own rules and is not a
+ * parity target.
  */
 
 /** Per-item data computed once per filter pass, like Swift's FilterCache. */

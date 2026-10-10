@@ -63,11 +63,11 @@ Commits carry the detail of *what*; this carries the *why*.
 - Not ported yet: the music-video genre enrichment (`effectiveGenres` reads
   MusicBrainz and Deezer, which are not in v0.1), and the collection and bundle
   filters.
-- Parity status, stated plainly: the Swift tests were not run, because this machine
-  has no Xcode. The Kotlin port follows the source. The shared JS smoke scripts
-  (`npm run test:filter`, 53 checks; `npm run test:schedule`, 12 checks) pass, but
-  they test the web filter, not the Kotlin code. Running the Kotlin code against the
-  same synthetic fixtures is the next parity step.
+- Parity status, stated plainly: the reference is the tvOS source only. The web
+  tuner is not a parity target. Its rules and schedule have diverged on purpose, so
+  it is not checked here. The Swift tests were not run, because this machine has no
+  Xcode. The Kotlin port follows the source, and the next parity step is the tvOS
+  test suite, or tvOS output on the same fixtures.
 
 - Step 1 of the first testable APK: a Jellyfin client for the music-video
   channels (`jellyfin/`). It covers sign-in with the MediaBrowser header
