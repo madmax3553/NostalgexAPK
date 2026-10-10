@@ -61,8 +61,9 @@ a device or emulator. The Android app is not released.
 people and places: a library size, an author name, a home LAN address and a
 Plex machine identifier (for example `NostalgexTests/DuplicateServerTests.swift`
 and `Nostalgex/Services/PlaybackStarvation.swift:5`). The Android port carries none
-of them. Fixing them in the Swift tree is a separate change that needs a decision
-first.
+of them. The Swift tree keeps them until the Swift app is deprecated, which the
+fork owner plans to do after the Android port is done. No Swift change is planned
+before then.
 
 **Next.** Start the feature port from the Swift
 channel and schedule logic, with a parity check against the same `channels.json`.
