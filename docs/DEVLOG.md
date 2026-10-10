@@ -102,6 +102,18 @@ Commits carry the detail of *what*; this carries the *why*.
   build went out. The name carries a trademark risk (Groot is a Marvel name).
   The fork owner accepted that risk.
 
+- Schedule ported (`schedule/`): the seeded RNG, Swift's shuffle, the show
+  interleave, premiere placement, sequel-part grouping, the day packer with its
+  two seam rules, and the now/up-next lookup. 14 schedule tests and 4 golden tests
+  for the random generator. The golden values come from an independent Python
+  implementation of the same algorithm, not from a Swift run. This machine cannot
+  run Swift, so the exact lineup is NOT yet checked against tvOS. That check is
+  the Swift tests run on a Mac, or a fixture run against the Swift output.
+- Not ported yet, so no lineup is shown on device: the yesterday-history store
+  (`AiredHistory` is an interface with an empty default, so the seam rules see no
+  history on a fresh install), the guide skin, the live preview, and Jellyfin TV
+  episodes.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.
