@@ -1,4 +1,5 @@
 <resources>
-    <string name="app_name">Nostalgex</string>
-    <string name="placeholder">Nostalgex for Android TV: scaffold only</string>
+    <string name="app_name">StaticGroot</string>
+    <string name="placeholder">StaticGroot for Android TV: scaffold only</string>
+    <string name="about_credit">Based on Nostalgex by Chad Mueller (MIT). This app is not affiliated with or endorsed by the original author. Original project: github.com/chadMueller/Nostalgex</string>
 </resources>

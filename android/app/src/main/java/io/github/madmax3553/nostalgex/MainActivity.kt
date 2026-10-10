@@ -74,6 +74,11 @@ class MainActivity : Activity() {
             }
         })
         root.addView(status)
+        root.addView(TextView(this).apply {
+            textSize = 14f
+            setPadding(0, dp(24), 0, 0)
+            text = getString(R.string.about_credit)
+        })
     }
 
     /** Runs on a background thread. Loads config and libraries, then builds the channel pools. */

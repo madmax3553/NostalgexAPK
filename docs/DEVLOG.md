@@ -95,6 +95,12 @@ Commits carry the detail of *what*; this carries the *why*.
   by the author. The app name is still open: upstream asks forks to ship under
   their own name, and the APK is still called Nostalgex.
 
+- The Android app is named StaticGroot. The launcher label and the sign-in screen
+  credit the upstream project under MIT, with a note that the fork is not endorsed by
+  the author. The package ID stays `io.github.madmax3553.nostalgex`, because it
+  cannot change once the app is published. The name carries a trademark risk
+  (Groot is a Marvel name). The fork owner accepted that risk.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.
