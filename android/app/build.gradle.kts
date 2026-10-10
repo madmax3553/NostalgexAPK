@@ -1,6 +1,17 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+// channels.json and channels-memberships.json live at the repo root and are shared
+// with the tvOS app and the web tuner. Copy them into the APK instead of keeping a
+// second copy in android/, so the three surfaces cannot drift (CLAUDE.md).
+val channelConfigDir = layout.buildDirectory.dir("generated/channelConfig")
+val syncChannelConfig by tasks.registering(Copy::class) {
+    from(rootProject.file("../channels.json"))
+    from(rootProject.file("../channels-memberships.json"))
+    into(channelConfigDir)
 }
 
 android {
@@ -30,11 +41,18 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    sourceSets["main"].assets.srcDir(channelConfigDir)
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(syncChannelConfig)
 }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.leanback)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
 }

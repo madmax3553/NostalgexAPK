@@ -41,8 +41,28 @@ Commits carry the detail of *what*; this carries the *why*.
   succeed (the test task has no tests yet). The debug APK reports
   `io.github.madmax3553.nostalgex`, versionCode 1, and a leanback launcher activity.
 
-**Half-done.** No Android tests exist yet. No APK has been installed on a device
-or emulator. The Android app is not released.
+- Port started, first slice: the `channels.json` loader
+  (`channels/ChannelConfig.kt`), using kotlinx.serialization with unknown keys
+  ignored. The Gradle build copies `channels.json` and `channels-memberships.json`
+  from the repo root into the APK, so there is no second copy in `android/`. Seven
+  unit tests read the real file: schema version 37, 131 channels, 14 bundles, 3
+  exclusive rules, unique static ids, one premiere channel (403), legacy
+  `channelID` normalised, and bundle references resolve. All seven pass.
+- Scope for the first testable APK, agreed 2026-10-10: Jellyfin only, TMDB and
+  OMDb enrichment with keys supplied at build time, no analytics (TelemetryDeck is
+  not ported), Media3 for playback.
+
+**Half-done.** Rule matching (`Channel.matches`, `filteredPool`), the daily
+schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`), the Jellyfin client,
+enrichment, the guide and the player are not ported. No APK has been installed on
+a device or emulator. The Android app is not released.
+
+**Not for the port.** The Swift test suite and some Swift comments name real
+people and places: a library size, an author name, a home LAN address and a
+Plex machine identifier (for example `NostalgexTests/DuplicateServerTests.swift`
+and `Nostalgex/Services/PlaybackStarvation.swift:5`). The Android port carries none
+of them. Fixing them in the Swift tree is a separate change that needs a decision
+first.
 
 **Next.** Start the feature port from the Swift
 channel and schedule logic, with a parity check against the same `channels.json`.
