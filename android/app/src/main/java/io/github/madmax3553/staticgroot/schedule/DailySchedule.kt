@@ -20,15 +20,18 @@ data class Block(val item: MediaItem, val startUnix: Long, val endUnix: Long) {
     val durationSeconds: Long get() = endUnix - startUnix
 }
 
-/** What a channel aired on a past day. Empty when unknown. */
+/** What a channel aired on a past day, and the day's packed order. Empty when unknown. */
 interface AiredHistory {
     fun airedKeys(channelId: Int, dayKey: String): Set<String>
     fun lastAired(channelId: Int, dayKey: String): String?
+    /** Saves one packed day, in airing order, so the next day can read it. */
+    fun record(channelId: Int, dayKey: String, orderedItemIds: List<String>)
 }
 
 object NoHistory : AiredHistory {
     override fun airedKeys(channelId: Int, dayKey: String): Set<String> = emptySet()
     override fun lastAired(channelId: Int, dayKey: String): String? = null
+    override fun record(channelId: Int, dayKey: String, orderedItemIds: List<String>) = Unit
 }
 
 /** Local-day helpers. Matches DailyManifestStore in Swift, for the device's time zone. */
@@ -196,7 +199,7 @@ class ChannelScheduler(
         return dayCache.getOrPut(key) {
             val yesterdayStart = dayStart - 86400
             val yKey = LocalDays.dayKey(yesterdayStart, zone)
-            DailyPacker.packDay(
+            val packed = DailyPacker.packDay(
                 pool = pool.filter { it.duration > 0 },
                 dayStartUnix = dayStart,
                 dayNumber = LocalDays.dayNumber(unix, zone),
@@ -205,6 +208,8 @@ class ChannelScheduler(
                 yesterdayAiredKeys = history.airedKeys(channelId, yKey),
                 yesterdayLastItemId = history.lastAired(channelId, yKey),
             )
+            history.record(channelId, LocalDays.dayKey(unix, zone), packed.map { it.item.id })
+            packed
         }
     }
 

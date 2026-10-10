@@ -53,6 +53,37 @@ object JellyfinMapping {
         )
     }
 
+    /**
+     * Port of tvOS JellyfinAPIService.fetchEpisodes. The series supplies the title, genres,
+     * TMDB id, year and rating, because episodes seldom carry their own. Items with no runtime
+     * are dropped. Season and episode numbers form the SxxExx tag.
+     */
+    fun toEpisode(ep: JellyfinItem, show: JellyfinItem): MediaItem? {
+        val durationMin = minutesFromTicks(ep.RunTimeTicks)
+        if (durationMin <= 0) return null
+        val s = ep.ParentIndexNumber?.let { "S%02d".format(it) }.orEmpty()
+        val e = ep.IndexNumber?.let { "E%02d".format(it) }.orEmpty()
+        return MediaItem(
+            id = ep.Id,
+            title = show.Name ?: ep.SeriesName.orEmpty(),
+            type = MediaType.EPISODE,
+            genres = show.Genres ?: emptyList(),
+            episodeTitle = ep.Name,
+            seTag = (s + e).ifEmpty { null },
+            year = show.ProductionYear,
+            originallyAvailableAt = (ep.PremiereDate ?: show.PremiereDate)?.take(10),
+            contentRating = show.OfficialRating ?: ep.OfficialRating,
+            duration = durationMin,
+            rating = show.CommunityRating ?: 0.0,
+            userRating = 0.0,
+            viewCount = ep.UserData?.PlayCount ?: 0,
+            addedAt = parseEpochSeconds(ep.DateCreated),
+            studio = show.Studios?.firstOrNull()?.Name,
+            tmdbID = providerId(show.ProviderIds, "Tmdb"),
+            librarySource = LibrarySource.TV,
+        )
+    }
+
     /** Case-insensitive provider lookup. Jellyfin keys are "Tmdb" and "Imdb" but clients vary. */
     fun providerId(ids: Map<String, String>?, name: String): String? {
         if (ids == null) return null

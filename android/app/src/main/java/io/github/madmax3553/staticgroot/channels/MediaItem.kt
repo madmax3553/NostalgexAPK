@@ -32,6 +32,8 @@ data class MediaItem(
     val genres: List<String> = emptyList(),
     val artist: String? = null,
     val episodeTitle: String? = null,
+    /** "S01E04" for episodes. Null for movies and music videos. */
+    val seTag: String? = null,
     val year: Int? = null,
     /** YYYY-MM-DD from the server. More precise than [year] when present. */
     val originallyAvailableAt: String? = null,

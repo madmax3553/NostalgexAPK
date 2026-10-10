@@ -11,8 +11,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
 /*
- * Plays the first item of a channel pool. Not scheduled yet: the schedule port decides
- * what is on now. Until then this screen is for testing the Jellyfin stream path only.
+ * Full-screen playback of what the channel is showing now, starting at the same point in the
+ * programme the guide showed. Opened from the guide with OK.
  */
 class PlayerActivity : Activity() {
 
@@ -22,20 +22,22 @@ class PlayerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val index = intent.getIntExtra(EXTRA_POOL_INDEX, -1)
-        val pool = AppSession.pools.getOrNull(index)
+        val runtime = AppSession.channels.getOrNull(index)
         val client = AppSession.client
-        val item = pool?.items?.firstOrNull()
+        val now = System.currentTimeMillis() / 1000
+        val sched = runtime?.let { AppSession.scheduleFor(it, now) }
+        val np = sched?.nowPlaying
 
         val playerView = PlayerView(this).apply { useController = true }
         label = TextView(this).apply {
-            textSize = 20f
+            textSize = 22f
             setPadding(32, 24, 32, 24)
             setBackgroundColor(0xAA000000.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            text = if (pool != null && item != null) {
-                "CH ${pool.channel.number} ${pool.channel.name}: ${item.title} (not scheduled)"
+            setTextColor(0xFF7CFF7C.toInt())
+            text = if (runtime != null && np != null) {
+                "CH ${runtime.number} ${runtime.name}: ${np.item.title}"
             } else {
-                "Nothing to play"
+                "Nothing is on this channel right now"
             }
         }
         setContentView(FrameLayout(this).apply {
@@ -43,20 +45,22 @@ class PlayerActivity : Activity() {
             addView(label, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         })
 
-        if (client == null || item == null) return
+        if (client == null || np == null || sched == null) return
+        val seekMs = sched.elapsedSeconds * 1000
 
         Thread {
             try {
-                val resolution = client.resolvePlayback(item.id)
+                val resolution = client.resolvePlayback(np.item.id)
                 runOnUiThread {
                     if (resolution == null) {
-                        label.text = "The server offered no playable stream for ${item.title}"
+                        label.text = "The server offered no playable stream for ${np.item.title}"
                     } else {
                         val p = ExoPlayer.Builder(this).build()
                         player = p
                         playerView.player = p
                         p.setMediaItem(ExoMediaItem.fromUri(resolution.url))
                         p.prepare()
+                        p.seekTo(seekMs)
                         p.playWhenReady = true
                     }
                 }

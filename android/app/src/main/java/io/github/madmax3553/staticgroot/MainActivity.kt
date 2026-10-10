@@ -16,16 +16,18 @@ import android.widget.ListView
 import android.widget.TextView
 import io.github.madmax3553.staticgroot.channels.ChannelConfigLoader
 import io.github.madmax3553.staticgroot.channels.ChannelMemberships
-import io.github.madmax3553.staticgroot.channels.ChannelPool
+import io.github.madmax3553.staticgroot.channels.ChannelPools
 import io.github.madmax3553.staticgroot.channels.FilterClock
 import io.github.madmax3553.staticgroot.channels.MediaItem
-import io.github.madmax3553.staticgroot.channels.MusicChannels
 import io.github.madmax3553.staticgroot.jellyfin.AuthResult
 import io.github.madmax3553.staticgroot.jellyfin.HttpUrlJellyfinHttp
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinItem
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinMapping
+import java.io.File
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /*
  * Sign-in (password or Quick Connect), then the music-video channel list. Plain views, so
@@ -132,8 +134,9 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Loads libraries and builds the music channel pools. Logs what each library holds, under
-     * the tag "StaticGroot", so an empty result can be traced to the server's item types.
+     * Loads every library, the movies and the TV episodes, and builds the pools for all channels.
+     * Logs what each library holds under the tag "StaticGroot", so an empty result can be
+     * traced to the server's item types.
      */
     private fun loadLibrary(url: String, auth: AuthResult) {
         val client = JellyfinClient(url, http, deviceId, auth.accessToken, auth.userId)
@@ -146,7 +149,11 @@ class MainActivity : Activity() {
         for (section in sections) {
             Log.i(TAG, "section '${section.title}' collectionType=${section.collectionType} type=${section.type}")
             if (section.type == "show") {
-                summary.add("${section.title}: TV shows (not loaded yet)")
+                val series = client.loadSeries(section.id)
+                val episodes = loadEpisodesConcurrently(client, series)
+                items.addAll(episodes)
+                Log.i(TAG, "  series=${series.size} episodes loaded=${episodes.size}")
+                summary.add("${section.title}: ${series.size} series, ${episodes.size} episodes")
                 continue
             }
             val isMusic = section.type == "musicvideo"
@@ -166,58 +173,57 @@ class MainActivity : Activity() {
             assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
         )
         val clock = FilterClock(System.currentTimeMillis() / 1000, ZoneId.systemDefault())
-        val pools = MusicChannels.build(config, items, memberships = memberships, clock = clock)
-        Log.i(TAG, "items=${items.size} musicChannels=${pools.size} withItems=${pools.count { it.items.isNotEmpty() }}")
+        val channels = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
+        val withItems = channels.count { it.pool.isNotEmpty() }
+        Log.i(TAG, "items=${items.size} channels=${channels.size} withItems=$withItems")
 
+        AppSession.init(File(filesDir, "day_history"))
         AppSession.client = client
-        AppSession.pools = pools
-        runOnUiThread { showChannels(pools, items.size, summary) }
+        AppSession.channels = channels
+        runOnUiThread { showSummary(items.size, withItems, channels.size, summary) }
     }
 
-    private fun fail(e: Exception) {
-        Log.w(TAG, "sign-in or load failed", e)
-        runOnUiThread { status.text = e.message ?: "Sign-in failed" }
+    /** Episodes for many series at once. Six requests in flight, as a simple cap. */
+    private fun loadEpisodesConcurrently(client: JellyfinClient, series: List<JellyfinItem>): List<MediaItem> {
+        val pool = Executors.newFixedThreadPool(EPISODE_FETCH_THREADS)
+        try {
+            val futures = series.map { show ->
+                pool.submit<List<MediaItem>> {
+                    client.loadEpisodes(show.Id).mapNotNull { JellyfinMapping.toEpisode(it, show) }
+                }
+            }
+            return futures.flatMap { it.get() }
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
-    private fun showChannels(pools: List<ChannelPool>, loaded: Int, summary: List<String>) {
+    private fun showSummary(loaded: Int, withItems: Int, total: Int, summary: List<String>) {
         root.removeAllViews()
-        root.addView(title("Music channels"))
+        root.addView(title("Libraries loaded"))
         root.addView(TextView(this).apply {
-            textSize = 16f
-            text = "$loaded items loaded. Playback is NOT scheduled yet: each channel plays its first item."
+            textSize = 18f
+            text = "$loaded items. $withItems of $total channels have programming."
             setPadding(0, 0, 0, dp(8))
         })
         root.addView(TextView(this).apply {
             textSize = 14f
             text = summary.joinToString("\n").ifEmpty { "The server has no libraries for this user." }
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(16))
         })
-        if (pools.isEmpty()) {
-            root.addView(TextView(this).apply {
-                textSize = 18f
-                text = "No music-video channels have items on this server."
-            })
-            return
-        }
-        val labels = pools.map { "CH ${it.channel.number}  ${it.channel.name}  (${it.items.size} items)" }
-        val list = ListView(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_list_item_1, labels)
-            isFocusable = true
-            onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-                if (pools[position].items.isEmpty()) {
-                    status.text = "That channel has no items yet."
-                } else {
-                    startActivity(
-                        android.content.Intent(this@MainActivity, PlayerActivity::class.java)
-                            .putExtra(PlayerActivity.EXTRA_POOL_INDEX, position),
-                    )
-                }
+        root.addView(Button(this).apply {
+            text = "Open guide"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@MainActivity, GuideActivity::class.java))
             }
-        }
+        })
         status = TextView(this).apply { textSize = 16f }
-        root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(status)
-        list.requestFocus()
+    }
+
+    private fun fail(e: Exception) {
+        Log.w(TAG, "sign-in or load failed", e)
+        runOnUiThread { status.text = e.message ?: "Sign-in failed" }
     }
 
     private fun title(text: String) = TextView(this).apply {
@@ -243,5 +249,6 @@ class MainActivity : Activity() {
         private const val TAG = "StaticGroot"
         private const val QUICK_CONNECT_POLL_MS = 2_000L
         private const val QUICK_CONNECT_TIMEOUT_MS = 5 * 60_000L
+        private const val EPISODE_FETCH_THREADS = 6
     }
 }

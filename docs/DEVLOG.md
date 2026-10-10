@@ -114,6 +114,18 @@ Commits carry the detail of *what*; this carries the *why*.
   history on a fresh install), the guide skin, the live preview, and Jellyfin TV
   episodes.
 
+- The guide is on device, built and installed (not yet checked by the user).
+  Pools cover all 131 channels from the Jellyfin movies and TV episodes, through the
+  shared `RuleFilter` and `filteredPool`. TV episodes take the series' title,
+  genres, TMDB id and year, as in tvOS `fetchEpisodes`. The schedule keeps a per-day
+  history in app storage (`FileDayHistory`), so the cross-day seam rule works from
+  the second day on. The guide is a channel list with a muted live preview. It seeks
+  to what is on now, and OK opens the full-screen player at the same point. The skin
+  uses the VT323 font from the repo, with each channel's colour. The CRT overlay and
+  the static transition are not ported.
+- 95 unit tests pass. Not verified: the lineup against tvOS, the preview and player
+  on the TV, the seek accuracy, and the episode load time on a large library.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.

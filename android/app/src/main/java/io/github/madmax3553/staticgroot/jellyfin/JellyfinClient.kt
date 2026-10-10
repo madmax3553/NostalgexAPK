@@ -60,8 +60,8 @@ class JellyfinClient(
         return json.decodeFromString(ItemsResponse.serializer(), body).TotalRecordCount ?: 0
     }
 
-    /** All items of [includeItemTypes] (default Movie) directly under a library, paged. */
-    fun loadMovies(parentId: String, includeItemTypes: String = "Movie"): List<JellyfinItem> {
+    /** All items of [includeItemTypes] directly under a parent, paged until the total is read. */
+    fun loadItems(parentId: String, includeItemTypes: String): List<JellyfinItem> {
         val collected = ArrayList<JellyfinItem>()
         var start = 0
         while (true) {
@@ -72,7 +72,7 @@ class JellyfinClient(
                     "ParentId" to parentId,
                     "Recursive" to "true",
                     "IncludeItemTypes" to includeItemTypes,
-                    "Fields" to "ProviderIds,Genres,Studios,MediaSources,ProductionYear,PremiereDate,DateCreated,UserData",
+                    "Fields" to "ProviderIds,Genres,Studios,MediaSources,ProductionYear,PremiereDate,DateCreated,UserData,Overview",
                     "StartIndex" to start.toString(),
                     "Limit" to PAGE_SIZE.toString(),
                     "SortBy" to "SortName",
@@ -88,6 +88,16 @@ class JellyfinClient(
         }
         return collected
     }
+
+    /** Movies (Jellyfin's flat item type) under a library. */
+    fun loadMovies(parentId: String, includeItemTypes: String = "Movie"): List<JellyfinItem> =
+        loadItems(parentId, includeItemTypes)
+
+    /** Series under a TV library. */
+    fun loadSeries(parentId: String): List<JellyfinItem> = loadItems(parentId, "Series")
+
+    /** Episodes of one series. */
+    fun loadEpisodes(seriesId: String): List<JellyfinItem> = loadItems(seriesId, "Episode")
 
     /**
      * Playback URL for an item. Mirrors tvOS JellyfinPlaybackResolver: the server's transcode
