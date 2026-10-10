@@ -52,10 +52,26 @@ Commits carry the detail of *what*; this carries the *why*.
   OMDb enrichment with keys supplied at build time, no analytics (TelemetryDeck is
   not ported), Media3 for playback.
 
-**Half-done.** Rule matching (`Channel.matches`, `filteredPool`), the daily
-schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`), the Jellyfin client,
-enrichment, the guide and the player are not ported. No APK has been installed on
-a device or emulator. The Android app is not released.
+- Rule matching is ported (`channels/RuleFilter.kt`): the port of
+  `AppState.filterItems`, `ExclusiveRule.matches` and `Channel.filteredPool`. It
+  covers the type and source gates, genre locks, title and episode-title rules
+  (word-boundary match, year suffix stripped), studio, network, keyword and
+  production-company rules, OMDb gates, manifest claims and exclusivity, dates,
+  ratings, duration and watch status. The clock and time zone are parameters, so
+  the tests are deterministic. 41 unit tests state the rules by name, and the
+  manifest loader parses the shared `channels-memberships.json`.
+- Not ported yet: the music-video genre enrichment (`effectiveGenres` reads
+  MusicBrainz and Deezer, which are not in v0.1), and the collection and bundle
+  filters.
+- Parity status, stated plainly: the Swift tests were not run, because this machine
+  has no Xcode. The Kotlin port follows the source. The shared JS smoke scripts
+  (`npm run test:filter`, 53 checks; `npm run test:schedule`, 12 checks) pass, but
+  they test the web filter, not the Kotlin code. Running the Kotlin code against the
+  same synthetic fixtures is the next parity step.
+
+**Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
+the Jellyfin client, enrichment, the guide and the player are not ported. No APK
+has been installed on a device or emulator. The Android app is not released.
 
 **Not for the port.** The Swift test suite and some Swift comments name real
 people and places: a library size, an author name, a home LAN address and a
