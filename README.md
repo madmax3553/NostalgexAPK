@@ -165,9 +165,7 @@ The website and web tuner at nostalgex.app load one page analytics script (stats
 
 ## Support the project
 
-Nostalgex is free and it's staying free. If it gives you a good Friday night, you can [buy me a coffee](https://buymeacoffee.com/chadmueller). It covers the Apple developer fee and keeps updates coming. The Sponsor button at the top of this repo goes to the same place.
-
-Helping costs nothing too: star the repo, rate the app on the App Store, or tell me about a channel that's always empty.
+This fork is built on Nostalgex by Chad Mueller, released under the MIT license. This fork is not affiliated with or endorsed by the original author. The original project is at [github.com/chadMueller/Nostalgex](https://github.com/chadMueller/Nostalgex).
 
 ## Contributing
 

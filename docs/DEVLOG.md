@@ -90,6 +90,11 @@ Commits carry the detail of *what*; this carries the *why*.
   a device or emulator, and nothing has been checked against a real Jellyfin
   server. The 19 client tests show the request and response handling only.
 
+- `README.md` no longer carries the original author's donation link. The fork
+  credits the upstream project under the MIT license and says it is not endorsed
+  by the author. The app name is still open: upstream asks forks to ship under
+  their own name, and the APK is still called Nostalgex.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.
