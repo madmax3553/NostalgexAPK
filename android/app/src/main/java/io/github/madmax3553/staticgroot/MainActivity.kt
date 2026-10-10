@@ -40,10 +40,11 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     @Volatile private var quickConnectCancelled = false
 
+    private fun prefs() = getSharedPreferences("staticgroot", MODE_PRIVATE)
+
     private val deviceId: String by lazy {
-        val prefs = getSharedPreferences("staticgroot", MODE_PRIVATE)
-        prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
-            prefs.edit().putString("device_id", it).apply()
+        prefs().getString("device_id", null) ?: UUID.randomUUID().toString().also {
+            prefs().edit().putString("device_id", it).apply()
         }
     }
 
@@ -66,7 +67,9 @@ class MainActivity : Activity() {
     private fun showSignIn() {
         root.removeAllViews()
         root.addView(title("Sign in to Jellyfin"))
-        val server = field("Server address, e.g. http://jellyfin.example:8096")
+        val server = field("Server address, e.g. http://jellyfin.example:8096").apply {
+            setText(prefs().getString(KEY_SERVER_URL, "").orEmpty())
+        }
         val user = field("Username")
         val password = field("Password", secret = true)
         status = TextView(this).apply { textSize = 18f; setPadding(0, dp(12), 0, 0) }
@@ -140,6 +143,8 @@ class MainActivity : Activity() {
      */
     private fun loadLibrary(url: String, auth: AuthResult) {
         val client = JellyfinClient(url, http, deviceId, auth.accessToken, auth.userId)
+        // Remember the address (never the token) so the next sign-in starts pre-filled.
+        prefs().edit().putString(KEY_SERVER_URL, client.serverUrl).apply()
         runOnUiThread { status.text = "Loading libraries..." }
 
         val items = ArrayList<MediaItem>()
@@ -250,5 +255,6 @@ class MainActivity : Activity() {
         private const val QUICK_CONNECT_POLL_MS = 2_000L
         private const val QUICK_CONNECT_TIMEOUT_MS = 5 * 60_000L
         private const val EPISODE_FETCH_THREADS = 6
+        private const val KEY_SERVER_URL = "server_url"
     }
 }
