@@ -69,9 +69,33 @@ Commits carry the detail of *what*; this carries the *why*.
   they test the web filter, not the Kotlin code. Running the Kotlin code against the
   same synthetic fixtures is the next parity step.
 
+- Step 1 of the first testable APK: a Jellyfin client for the music-video
+  channels (`jellyfin/`). It covers sign-in with the MediaBrowser header
+  (`AuthenticateByName`), libraries from `/UserViews`, paged `/Items` reads,
+  and the item mapping. Runtime uses 10,000,000 ticks a second. Music-video
+  libraries tag items "Music Video", and short music-genre clips in a movie library
+  count as music videos too. Playback resolves through PlaybackInfo, which uses
+  the server transcode URL first, then a static direct-play stream. This follows
+  tvOS `JellyfinPlaybackResolver`. 19 unit tests use synthetic JSON and a fake
+  transport. No server was contacted.
+- `MusicChannels` builds the pools for the `musicVideo` channels with the same
+  `RuleFilter` as the rest. The channel list and player are plain views, not the
+  Leanback UI. The player is Media3 `ExoPlayer`.
+- Known gaps in step 1, all deliberate: the sign-in token lives in memory only, so
+  the user signs in on every launch; the device profile is H.264 only (no HEVC, no
+  8-bit cap, placeholder bitrate); cleartext HTTP is allowed for LAN servers, as on
+  tvOS; playback is not scheduled, so each channel plays its first item and the
+  screen says so; the playback session is not reported or stopped on the server.
+- Not verified: the player, the sign-in screen and the stream path have not run on
+  a device or emulator, and nothing has been checked against a real Jellyfin
+  server. The 19 client tests show the request and response handling only.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
-the Jellyfin client, enrichment, the guide and the player are not ported. No APK
-has been installed on a device or emulator. The Android app is not released.
+enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
+been installed on a device or emulator. The Android app is not released.
+
+**Next.** A YouTube Music spike on a real device (see the todo list in the session).
+Then the schedule port, which turns a pool into what is on now.
 
 **Not for the port.** The Swift test suite and some Swift comments name real
 people and places: a library size, an author name, a home LAN address and a

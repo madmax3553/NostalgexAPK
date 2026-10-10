@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Jellyfin and Emby LAN servers are usually plain http. tvOS allows this through
+  NSAllowsArbitraryLoads (see Nostalgex/Info.plist), so the port allows cleartext too.
+  A remote server should use https, but the app does not enforce it.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
