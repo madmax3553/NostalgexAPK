@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Nostalgex" parent="@style/Theme.Leanback">
+        <item name="android:windowBackground">@color/nostalgex_background</item>
+    </style>
+</resources>

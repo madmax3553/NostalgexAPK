@@ -25,13 +25,27 @@ Commits carry the detail of *what*; this carries the *why*.
 - Commit `af228bc` (CLAUDE.md) was made under the author name "Batman" with the
   configured email. Git config was not changed.
 
-**Half-done.** The Android port has no code yet. The Gradle test command in
-`CLAUDE.md` is a placeholder until `android/` builds. Nothing has been run.
+- `android/` is scaffolded, uncommitted: Gradle Kotlin DSL with a version
+  catalog, `versionName` 0.1.0 and `versionCode` 1, `minSdk` 26 as a
+  placeholder, `targetSdk` 35. The manifest declares leanback as required and
+  touchscreen as optional. `MainActivity` is a placeholder screen. Icon and
+  banner are placeholder vectors. `android/.gitignore` keeps `local.properties`
+  and keystores out of git.
+- The package and `applicationId` are `io.github.madmax3553.nostalgex`, chosen by
+  the fork owner. They were first copied from the tvOS bundle ID
+  (`com.muellhaus.nostalgex`) by mistake and then changed before any release.
+  The ID is permanent once an app is published, so change it now or never.
+- Build verified on this machine: JDK 17, Android SDK platform 35 and
+  build-tools 35.0.0 under `~/Android/Sdk`, Gradle 8.10.2 via the wrapper.
+  `./gradlew -p android :app:testDebugUnitTest` and `:app:assembleDebug` both
+  succeed (the test task has no tests yet). The debug APK reports
+  `io.github.madmax3553.nostalgex`, versionCode 1, and a leanback launcher activity.
 
-**Next.** Create the `android/` Gradle project (Android TV, leanback), then
-confirm `./gradlew -p android :app:testDebugUnitTest` and record it in
-`CLAUDE.md` and `README.md`. Start the feature port from the Swift channel and
-schedule logic, with a parity check against the same `channels.json`.
+**Half-done.** No Android tests exist yet. No APK has been installed on a device
+or emulator. The Android app is not released.
+
+**Next.** Start the feature port from the Swift
+channel and schedule logic, with a parity check against the same `channels.json`.
 
 ## 2026-10-09 (app)
 

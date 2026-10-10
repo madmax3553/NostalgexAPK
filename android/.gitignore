@@ -1,0 +1,17 @@
+# Gradle and build output
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# Local machine settings (SDK path lives here, never commit it)
+local.properties
+
+# Signing: keystores and their passwords never go in the repo
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+*.iml

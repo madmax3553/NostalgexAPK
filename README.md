@@ -76,7 +76,7 @@ Native Android TV (leanback) app, in this fork only. Not released. Target is par
 - **Stack:** Kotlin, Gradle (`android/`). Kept out of the Xcode project and the other way round.
 - **Target:** Android TV, D-pad navigation only.
 - **Versioning:** `versionName` and `versionCode` in `android/app/build.gradle`.
-- **Status:** `android/` does not exist yet. The Gradle project is the next step. Build, test and install instructions will be added here once it builds.
+- **Status:** scaffold builds. It shows a placeholder screen only.
 
 ### Public site (`index.html`)
 Marketing page and the path into the tuner and the App Store. Served at `/` on Vercel.
@@ -116,7 +116,12 @@ npm run dev
 ```
 
 ### Android TV
-In development. Gradle project in `android/`. Build and test commands will be recorded here once confirmed.
+Gradle project in `android/`. Needs JDK 17 and the Android SDK (platform 35, build-tools 35.0.0). Put `sdk.dir=/path/to/Sdk` in `android/local.properties`; that file is git-ignored.
+
+```
+./gradlew -p android :app:testDebugUnitTest   # unit tests
+./gradlew -p android :app:assembleDebug       # debug APK in android/app/build/outputs/apk/debug/
+```
 
 ### tvOS
 Open `Nostalgex/Nostalgex.xcodeproj` in Xcode. Build target is Nostalgex (tvOS).
