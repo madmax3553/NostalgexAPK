@@ -36,11 +36,32 @@ class JellyfinClient(
     fun loadSections(): List<LibrarySection> {
         val body = http.get(url("/UserViews", "userId" to userId), headers())
         val views = json.decodeFromString(ItemsResponse.serializer(), body).Items.orEmpty()
-        return views.map { LibrarySection(it.Id, it.Name ?: "Library", sectionType(it.CollectionType)) }
+        return views.map {
+            LibrarySection(it.Id, it.Name ?: "Library", sectionType(it.CollectionType), it.CollectionType)
+        }
     }
 
-    /** All movies (Jellyfin's flat item type) directly under a library, paged. */
-    fun loadMovies(parentId: String): List<JellyfinItem> {
+    /**
+     * Total items of one Jellyfin item type under a library, with no page read. Diagnostic:
+     * shows whether a library's clips are stored as "Movie" or as "MusicVideo".
+     */
+    fun countItems(parentId: String, includeItemTypes: String): Int {
+        val body = http.get(
+            url(
+                "/Items",
+                "userId" to userId,
+                "ParentId" to parentId,
+                "Recursive" to "true",
+                "IncludeItemTypes" to includeItemTypes,
+                "Limit" to "0",
+            ),
+            headers(),
+        )
+        return json.decodeFromString(ItemsResponse.serializer(), body).TotalRecordCount ?: 0
+    }
+
+    /** All items of [includeItemTypes] (default Movie) directly under a library, paged. */
+    fun loadMovies(parentId: String, includeItemTypes: String = "Movie"): List<JellyfinItem> {
         val collected = ArrayList<JellyfinItem>()
         var start = 0
         while (true) {
@@ -50,7 +71,7 @@ class JellyfinClient(
                     "userId" to userId,
                     "ParentId" to parentId,
                     "Recursive" to "true",
-                    "IncludeItemTypes" to "Movie",
+                    "IncludeItemTypes" to includeItemTypes,
                     "Fields" to "ProviderIds,Genres,Studios,MediaSources,ProductionYear,PremiereDate,DateCreated,UserData",
                     "StartIndex" to start.toString(),
                     "Limit" to PAGE_SIZE.toString(),
@@ -147,6 +168,53 @@ class JellyfinClient(
             return AuthResult(accessToken = token, userId = uid, serverId = result.ServerId.orEmpty())
         }
 
+        /** Starts Quick Connect. The user approves [code] in the Jellyfin dashboard. */
+        fun quickConnectInitiate(serverUrl: String, http: JellyfinHttp, deviceId: String): QuickConnectStart {
+            val base = normalizeServerUrl(serverUrl)
+            // Initiate is a POST on Jellyfin (Jellyfin.Api QuickConnectController). Connect is a GET.
+            val body = http.post(
+                "$base/QuickConnect/Initiate",
+                mapOf("Accept" to "application/json", "Authorization" to authorizationHeader(deviceId, "")),
+                "",
+            )
+            val r = Json { ignoreUnknownKeys = true }.decodeFromString(QuickConnectResult.serializer(), body)
+            val code = r.Code
+            val secret = r.Secret
+            if (code.isNullOrEmpty() || secret.isNullOrEmpty()) {
+                throw JellyfinException("Quick Connect is not available on this server")
+            }
+            return QuickConnectStart(code, secret)
+        }
+
+        /** One poll. True once the user has approved the code. */
+        fun quickConnectCheck(serverUrl: String, http: JellyfinHttp, deviceId: String, secret: String): Boolean {
+            val base = normalizeServerUrl(serverUrl)
+            val body = http.get(
+                "$base/QuickConnect/Connect?Secret=${URLEncoder.encode(secret, "UTF-8")}",
+                mapOf("Accept" to "application/json", "Authorization" to authorizationHeader(deviceId, "")),
+            )
+            return Json { ignoreUnknownKeys = true }
+                .decodeFromString(QuickConnectResult.serializer(), body).Authenticated == true
+        }
+
+        /** Exchanges an approved Quick Connect secret for a token. */
+        fun quickConnectAuthenticate(serverUrl: String, http: JellyfinHttp, deviceId: String, secret: String): AuthResult {
+            val base = normalizeServerUrl(serverUrl)
+            val body = Json.encodeToString(QuickConnectSecret.serializer(), QuickConnectSecret(secret))
+            val response = http.post(
+                "$base/Users/AuthenticateWithQuickConnect",
+                mapOf("Accept" to "application/json", "Authorization" to authorizationHeader(deviceId, "")),
+                body,
+            )
+            val result = Json { ignoreUnknownKeys = true }.decodeFromString(AuthResponse.serializer(), response)
+            val token = result.AccessToken
+            val uid = result.User?.Id
+            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) {
+                throw JellyfinException("Quick Connect was not approved", 401)
+            }
+            return AuthResult(accessToken = token, userId = uid, serverId = result.ServerId.orEmpty())
+        }
+
         /** Maps a Jellyfin CollectionType to the section type the loader branches on. */
         fun sectionType(collectionType: String?): String = when (collectionType?.lowercase()) {
             "tvshows" -> "show"
@@ -160,7 +228,14 @@ class JellyfinClient(
 
 data class AuthResult(val accessToken: String, val userId: String, val serverId: String)
 
-data class LibrarySection(val id: String, val title: String, val type: String)
+data class LibrarySection(
+    val id: String,
+    val title: String,
+    val type: String,
+    val collectionType: String? = null,
+)
+
+data class QuickConnectStart(val code: String, val secret: String)
 
 /** The resolved playback URL, and whether it is a direct file or a server transcode. */
 data class PlaybackResolution(val url: String, val playSessionId: String?, val isDirectPlay: Boolean)

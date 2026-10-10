@@ -121,3 +121,13 @@ data class PlaybackInfoBody(
     val DeviceProfile: DeviceProfile,
     val MediaSourceId: String? = null,
 )
+
+@Serializable
+data class QuickConnectResult(
+    val Code: String? = null,
+    val Secret: String? = null,
+    val Authenticated: Boolean? = null,
+)
+
+@Serializable
+data class QuickConnectSecret(val Secret: String)

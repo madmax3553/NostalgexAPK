@@ -48,7 +48,10 @@ class HttpUrlJellyfinHttp(
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
-            if (code !in 200..299) throw JellyfinException("Server answered HTTP $code", code)
+            if (code !in 200..299) {
+                // Path only, never the query: query strings can carry secrets or api_key.
+                throw JellyfinException("Server answered HTTP $code for ${URL(url).path}", code)
+            }
             return text
         } catch (e: IOException) {
             throw JellyfinException("Request failed: ${e.message}")

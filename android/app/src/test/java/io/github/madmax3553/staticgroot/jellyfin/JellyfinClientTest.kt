@@ -91,6 +91,21 @@ class JellyfinClientTest {
         }
     }
 
+    @Test
+    fun quickConnectInitiateIsAPostAndConnectIsAGet() {
+        // Jellyfin's QuickConnectController: Initiate is [HttpPost], Connect is [HttpGet].
+        val http = FakeHttp(mapOf(
+            "/QuickConnect/Initiate" to """{"Code":"123456","Secret":"s3cret"}""",
+            "/QuickConnect/Connect" to """{"Authenticated":false}""",
+        ))
+        val start = JellyfinClient.quickConnectInitiate("http://host:8096", http, deviceId)
+        assertEquals("123456", start.code)
+        assertEquals("POST", http.calls.single().method)
+        assertFalse(JellyfinClient.quickConnectCheck("http://host:8096", http, deviceId, start.secret))
+        assertEquals("GET", http.calls.last().method)
+        assertTrue(http.calls.last().url.contains("Secret=s3cret"))
+    }
+
     // -- Libraries --------------------------------------------------------------------
 
     @Test
