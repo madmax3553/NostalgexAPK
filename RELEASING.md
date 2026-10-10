@@ -60,7 +60,7 @@ uploaded is still free to reuse, but confirm that in TestFlight rather than assu
 3. Sanity-check the hand-written channel and bundle counts near the lineup header
    (`data-lineup-channels`, `data-lineup-bundles`) still match `channels.json`.
    They are no-JS fallbacks; `app.js` corrects them at runtime.
-4. Push to `main`. Vercel builds and deploys production on its own. No CLI step.
+4. Push to `master`. Vercel builds and deploys production on its own. No CLI step.
 5. Load nostalgex.app and the web tuner once and confirm nothing 404s.
 
 ## tvOS release

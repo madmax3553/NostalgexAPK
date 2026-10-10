@@ -18,6 +18,10 @@ Commits carry the detail of *what*; this carries the *why*.
   (`madmax3553/NostalgexAPK`, upstream `chadMueller/Nostalgex`) and list the
   Android TV surface as in development. Upstream claims (App Store, changelog,
   community links) are unchanged.
+- The default branch is now `master` (was `main`). The CI trigger in
+  `.github/workflows/ci.yml`, the release steps in `RELEASING.md` and the docs
+  point at `master`. Vercel's production branch has to be set to `master` in the
+  Vercel project, or pushes will not deploy.
 - Commit `af228bc` (CLAUDE.md) was made under the author name "Batman" with the
   configured email. Git config was not changed.
 

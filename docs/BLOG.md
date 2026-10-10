@@ -21,7 +21,7 @@ and the site build renders them into pages that match the rest of the site.
 6. **Build the site locally with `npm run build`** and open
    `http://localhost:4173/blog/<slug>` with `npm run preview` to check
    it. The build also updates `public/sitemap.xml` with the new entry.
-7. **Commit and PR.** When the PR merges to `main`, Vercel deploys and the
+7. **Commit and PR.** When the PR merges to `master`, Vercel deploys and the
    post is live.
 
 ## Frontmatter fields

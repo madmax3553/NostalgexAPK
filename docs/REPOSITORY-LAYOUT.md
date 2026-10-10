@@ -55,7 +55,7 @@ The nested folder `Nostalgex/Nostalgex/` (app target inside the project) is norm
 
 | Surface | Builds where |
 |--------|----------------|
-| Web | **Vercel** — GitHub integration on this repo, `main` → production |
+| Web | **Vercel** — GitHub integration on this repo, `master` → production |
 | tvOS | **Xcode** — Archive → App Store Connect |
 | Android TV | **Gradle** — not released yet. Signing keys stay out of the repo (`local.properties` or environment variables). |
 
@@ -72,4 +72,4 @@ The Muell Haus `vibing` repo intentionally **gitignores** `My Assistant/projects
 
 ## Restoring a full tree
 
-If you only see part of the repo (e.g. Xcode project only), run `git pull origin main` from a clean clone of **this** repository.
+If you only see part of the repo (e.g. Xcode project only), run `git pull origin master` from a clean clone of **this** repository.

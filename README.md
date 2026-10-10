@@ -45,7 +45,7 @@ Recent evidence, so you don't have to take my word for it:
 - **Releases:** 1.0.23 shipped to the App Store this week, and 1.0.24 is in the repo now. Full history is in the [App Store version history](https://apps.apple.com/app/nostalgex/id6762563534) and [`content/changelog.json`](content/changelog.json).
 - **Dev log:** [docs/DEVLOG.md](docs/DEVLOG.md) explains why things changed and what's still half done.
 - **Issues and outside PRs:** on Oct 8, 2026 I merged [#5](https://github.com/chadMueller/Nostalgex/pull/5) and [#7](https://github.com/chadMueller/Nostalgex/pull/7) from [@Gorbataras](https://github.com/Gorbataras) (Emby seek fix, and no more sound over a black picture on Jellyfin and Emby), and closed [#3](https://github.com/chadMueller/Nostalgex/issues/3), the wrong-start-time bug. #7 went from opened to merged in about two hours.
-- **Tests** run in CI on every push to `main` and on every pull request.
+- **Tests** run in CI on every push to `master` and on every pull request.
 
 ## Apps
 
@@ -183,5 +183,5 @@ The Nostalgex name, icon and the nostalgex.app site are not part of the MIT gran
 
 ## Deployment
 
-Web app deploys to Vercel automatically on push to `main`.
+Web app deploys to Vercel automatically on push to `master`.
 
