@@ -1,7 +1,7 @@
-package io.github.madmax3553.nostalgex.jellyfin
+package io.github.madmax3553.staticgroot.jellyfin
 
-import io.github.madmax3553.nostalgex.channels.LibrarySource
-import io.github.madmax3553.nostalgex.channels.MediaType
+import io.github.madmax3553.staticgroot.channels.LibrarySource
+import io.github.madmax3553.staticgroot.channels.MediaType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

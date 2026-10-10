@@ -31,7 +31,7 @@ Commits carry the detail of *what*; this carries the *why*.
   touchscreen as optional. `MainActivity` is a placeholder screen. Icon and
   banner are placeholder vectors. `android/.gitignore` keeps `local.properties`
   and keystores out of git.
-- The package and `applicationId` are `io.github.madmax3553.nostalgex`, chosen by
+- The package and `applicationId` were `io.github.madmax3553.nostalgex`, chosen by
   the fork owner. They were first copied from the tvOS bundle ID
   (`com.muellhaus.nostalgex`) by mistake and then changed before any release.
   The ID is permanent once an app is published, so change it now or never.
@@ -39,7 +39,7 @@ Commits carry the detail of *what*; this carries the *why*.
   build-tools 35.0.0 under `~/Android/Sdk`, Gradle 8.10.2 via the wrapper.
   `./gradlew -p android :app:testDebugUnitTest` and `:app:assembleDebug` both
   succeed (the test task has no tests yet). The debug APK reports
-  `io.github.madmax3553.nostalgex`, versionCode 1, and a leanback launcher activity.
+  `io.github.madmax3553.nostalgex` (since renamed to `io.github.madmax3553.staticgroot`), versionCode 1, and a leanback launcher activity.
 
 - Port started, first slice: the `channels.json` loader
   (`channels/ChannelConfig.kt`), using kotlinx.serialization with unknown keys
@@ -97,9 +97,10 @@ Commits carry the detail of *what*; this carries the *why*.
 
 - The Android app is named StaticGroot. The launcher label and the sign-in screen
   credit the upstream project under MIT, with a note that the fork is not endorsed by
-  the author. The package ID stays `io.github.madmax3553.nostalgex`, because it
-  cannot change once the app is published. The name carries a trademark risk
-  (Groot is a Marvel name). The fork owner accepted that risk.
+  the author. The package ID is now `io.github.madmax3553.staticgroot`, to match
+  the name. The old ID `io.github.madmax3553.nostalgex` was changed before any
+  build went out. The name carries a trademark risk (Groot is a Marvel name).
+  The fork owner accepted that risk.
 
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has

@@ -1,7 +1,7 @@
-package io.github.madmax3553.nostalgex
+package io.github.madmax3553.staticgroot
 
-import io.github.madmax3553.nostalgex.channels.ChannelPool
-import io.github.madmax3553.nostalgex.jellyfin.JellyfinClient
+import io.github.madmax3553.staticgroot.channels.ChannelPool
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
 
 /**
  * In-memory session shared by the activities. Nothing is persisted yet, so the user signs

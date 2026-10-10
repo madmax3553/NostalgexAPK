@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.jellyfin
+package io.github.madmax3553.staticgroot.jellyfin
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

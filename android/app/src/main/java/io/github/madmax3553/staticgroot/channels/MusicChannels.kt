@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.channels
+package io.github.madmax3553.staticgroot.channels
 
 /*
  * Builds the pools for the music-video channels, the channels whose rules say

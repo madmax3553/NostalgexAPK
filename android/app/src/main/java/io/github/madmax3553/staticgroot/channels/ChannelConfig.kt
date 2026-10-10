@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.channels
+package io.github.madmax3553.staticgroot.channels
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json

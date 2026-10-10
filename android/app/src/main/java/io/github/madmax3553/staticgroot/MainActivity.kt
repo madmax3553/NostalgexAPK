@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex
+package io.github.madmax3553.staticgroot
 
 import android.app.Activity
 import android.os.Bundle
@@ -13,15 +13,15 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
-import io.github.madmax3553.nostalgex.channels.ChannelConfigLoader
-import io.github.madmax3553.nostalgex.channels.ChannelMemberships
-import io.github.madmax3553.nostalgex.channels.ChannelPool
-import io.github.madmax3553.nostalgex.channels.FilterClock
-import io.github.madmax3553.nostalgex.channels.MediaItem
-import io.github.madmax3553.nostalgex.channels.MusicChannels
-import io.github.madmax3553.nostalgex.jellyfin.HttpUrlJellyfinHttp
-import io.github.madmax3553.nostalgex.jellyfin.JellyfinClient
-import io.github.madmax3553.nostalgex.jellyfin.JellyfinMapping
+import io.github.madmax3553.staticgroot.channels.ChannelConfigLoader
+import io.github.madmax3553.staticgroot.channels.ChannelMemberships
+import io.github.madmax3553.staticgroot.channels.ChannelPool
+import io.github.madmax3553.staticgroot.channels.FilterClock
+import io.github.madmax3553.staticgroot.channels.MediaItem
+import io.github.madmax3553.staticgroot.channels.MusicChannels
+import io.github.madmax3553.staticgroot.jellyfin.HttpUrlJellyfinHttp
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinMapping
 import java.time.ZoneId
 import java.util.UUID
 

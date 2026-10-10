@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.channels
+package io.github.madmax3553.staticgroot.channels
 
 /*
  * The fields of tvOS PlexMediaItem that channel rules read. Playback, artwork and

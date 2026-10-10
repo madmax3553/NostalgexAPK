@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex
+package io.github.madmax3553.staticgroot
 
 import android.app.Activity
 import android.os.Bundle

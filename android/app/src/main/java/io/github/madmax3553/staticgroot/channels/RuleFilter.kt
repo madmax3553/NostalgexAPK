@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.channels
+package io.github.madmax3553.staticgroot.channels
 
 import java.time.Instant
 import java.time.LocalDate

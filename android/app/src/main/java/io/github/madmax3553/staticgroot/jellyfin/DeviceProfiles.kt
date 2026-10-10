@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.jellyfin
+package io.github.madmax3553.staticgroot.jellyfin
 
 /**
  * The device profile sent with PlaybackInfo. Mirrors the shape of tvOS

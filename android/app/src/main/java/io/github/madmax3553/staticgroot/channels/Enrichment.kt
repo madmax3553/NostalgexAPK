@@ -1,4 +1,4 @@
-package io.github.madmax3553.nostalgex.channels
+package io.github.madmax3553.staticgroot.channels
 
 /** The fields of tvOS MediaEnrichment that channel rules read (TMDB and OMDb). */
 data class MediaEnrichment(

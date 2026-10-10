@@ -15,11 +15,11 @@ val syncChannelConfig by tasks.registering(Copy::class) {
 }
 
 android {
-    namespace = "io.github.madmax3553.nostalgex"
+    namespace = "io.github.madmax3553.staticgroot"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.madmax3553.nostalgex"
+        applicationId = "io.github.madmax3553.staticgroot"
         // Placeholder floor. Set the real device floor during the port.
         minSdk = 26
         targetSdk = 35
