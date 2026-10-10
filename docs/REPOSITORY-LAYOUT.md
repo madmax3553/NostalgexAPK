@@ -1,16 +1,23 @@
 # Nostalgex repository layout
 
-This repo is intentionally **one project, three surfaces**. Everything that ships to users should live **in this GitHub repo** (`chadMueller/Nostalgex`). Do not treat another monorepo as the source of truth for Nostalgex.
+This repo is intentionally **one project, four surfaces**. It is a fork: upstream is `chadMueller/Nostalgex`, and this fork is `madmax3553/NostalgexAPK`. Everything that ships should live **in this repo**. Do not treat another monorepo as the source of truth for Nostalgex.
 
 ## Surfaces
 
-| Surface | Role | Typical entry |
-|--------|------|----------------|
-| **Public site** | Marketing + Plex connect; routes users into the tuner | `/` → `index.html` |
-| **Web app (tuner)** | Full in-browser guide + playback | `plex-tuner.html` |
-| **tvOS app** | Native Apple TV experience | Xcode: `Nostalgex/Nostalgex.xcodeproj` |
+| Surface | Role | Status | Typical entry |
+|--------|------|--------|----------------|
+| **Public site** | Marketing + Plex connect; routes users into the tuner | Live (upstream) | `/` → `index.html` |
+| **Web app (tuner)** | Full in-browser guide + playback | Live (upstream) | `plex-tuner.html` |
+| **tvOS app** | Native Apple TV experience. Reference for the port. | Shipping upstream. Frozen here except fixes that go to both platforms. | Xcode: `Nostalgex/Nostalgex.xcodeproj` |
+| **Android TV app** | Native Android TV (leanback) port of the tvOS app | In development in this fork. Not released. | Gradle: `android/` |
 
-**User flow:** landing → connect Plex → **web tuner** on the same origin. The **tvOS app** shares `channels.json` and filter semantics; release it via Xcode / App Store Connect, not Vercel.
+**User flow:** landing → connect Plex → **web tuner** on the same origin. The **tvOS app** and the **Android TV app** share `channels.json` and filter semantics with the web tuner. Release tvOS via Xcode / App Store Connect, not Vercel. Android has no release channel yet.
+
+## Canonical paths (repo root)
+
+| Path | Purpose |
+|------|---------|
+| `android/` | Android TV app (Gradle). Kept out of the Xcode project and the reverse. |
 
 ## Canonical paths (repo root)
 
@@ -41,7 +48,7 @@ The nested folder `Nostalgex/Nostalgex/` (app target inside the project) is norm
 
 ## Shared logic
 
-- **Filtering / schedules:** Keep `plex-tuner.html` (JS) aligned with `Nostalgex/.../AppState.swift` (Swift). Shared data lives in `channels.json`; duplicated rule semantics should be updated together.
+- **Filtering / schedules:** Keep `plex-tuner.html` (JS), `android/` (Kotlin) and `Nostalgex/.../AppState.swift` (Swift) aligned. The Swift code is the reference for the Android port. Shared data lives in `channels.json`; duplicated rule semantics should be updated together, and checked with `scripts/nostalgex-filter-smoke.mjs` and `scripts/nostalgex-schedule-order-smoke.mjs`.
 - **Secrets:** TMDB / Supabase / OMDb keys stay in ignored files (see repo `.gitignore`) and Vercel env vars — never commit real credentials.
 
 ## Deployment
@@ -50,8 +57,9 @@ The nested folder `Nostalgex/Nostalgex/` (app target inside the project) is norm
 |--------|----------------|
 | Web | **Vercel** — GitHub integration on this repo, `main` → production |
 | tvOS | **Xcode** — Archive → App Store Connect |
+| Android TV | **Gradle** — not released yet. Signing keys stay out of the repo (`local.properties` or environment variables). |
 
-Vercel must not attempt to compile the Xcode project.
+Vercel must not attempt to compile the Xcode project or the Gradle project.
 
 ## Working alongside other repos (e.g. Muell Haus assistant workspace)
 

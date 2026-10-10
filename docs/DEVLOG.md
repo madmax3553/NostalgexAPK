@@ -3,6 +3,32 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-10 (fork: Android TV port)
+
+**Shipped.** Nothing. No build went out, and `android/` does not exist yet.
+
+**Changed.**
+
+- `CLAUDE.md` now describes this repo as a fork being ported to Android TV, with
+  the tvOS app as the spec. It adds the rules for the port: remote-only
+  navigation, port behaviour not structure, keep `android/` out of the Xcode
+  project, and parity checks against the Swift code on the same inputs. Signing
+  secrets stay out of git.
+- `README.md` and `docs/REPOSITORY-LAYOUT.md` now say this is a fork
+  (`madmax3553/NostalgexAPK`, upstream `chadMueller/Nostalgex`) and list the
+  Android TV surface as in development. Upstream claims (App Store, changelog,
+  community links) are unchanged.
+- Commit `af228bc` (CLAUDE.md) was made under the author name "Batman" with the
+  configured email. Git config was not changed.
+
+**Half-done.** The Android port has no code yet. The Gradle test command in
+`CLAUDE.md` is a placeholder until `android/` builds. Nothing has been run.
+
+**Next.** Create the `android/` Gradle project (Android TV, leanback), then
+confirm `./gradlew -p android :app:testDebugUnitTest` and record it in
+`CLAUDE.md` and `README.md`. Start the feature port from the Swift channel and
+schedule logic, with a parity check against the same `channels.json`.
+
 ## 2026-10-09 (app)
 
 **Shipped.** Nothing to Apple. 1.0.24 (45) is still in TestFlight beta review.

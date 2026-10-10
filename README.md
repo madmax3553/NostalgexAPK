@@ -9,9 +9,18 @@ A free, open source retro TV channel guide for your own Plex, Jellyfin or Emby s
 
 Nostalgex turns your library into 131 channels in 14 bundles, with a real channel guide. Channels fill themselves from your library based on rules (genre, studio, watch history, content ratings and more) and play on a fixed daily schedule, so tuning in feels like live TV. It's a client only. It doesn't host or supply any media.
 
+## This fork: Android TV
+
+This repository (`madmax3553/NostalgexAPK`) is a fork of [`chadMueller/Nostalgex`](https://github.com/chadMueller/Nostalgex). The fork is porting the Apple TV app to **Android TV**. The Android app lives in `android/` and is **in development**. It is not released and there is no APK to install yet.
+
+The target is feature parity with the tvOS app on the same inputs: the same `channels.json`, the same schedule and the same library behaviour. Navigation is remote-only (D-pad), so every screen works without touch. The Swift code is the reference. Where it's unclear how something should behave, the Swift source and its tests decide.
+
+The web tuner and marketing site in this fork are unchanged from upstream.
+
 ## Get it
 
-- **Apple TV:** [Nostalgex on the App Store](https://apps.apple.com/app/nostalgex/id6762563534). Free, tvOS 18 or later.
+- **Apple TV:** [Nostalgex on the App Store](https://apps.apple.com/app/nostalgex/id6762563534). Free, tvOS 18 or later. This is upstream's build.
+- **Android TV:** in development in this fork. Not yet available.
 - **Any browser:** [the web tuner](https://www.nostalgex.app/web-tuner). Free, nothing to install.
 - **Website:** [nostalgex.app](https://www.nostalgex.app)
 
@@ -25,7 +34,7 @@ No ads, no account, no in-app purchases.
 
 The Apple TV app can connect to more than one server at a time.
 
-**Source of truth:** this repository (`chadMueller/Nostalgex`) contains the **public site**, **web tuner**, and **tvOS app** together. Read **[docs/REPOSITORY-LAYOUT.md](docs/REPOSITORY-LAYOUT.md)** for boundaries, deploy split, and how to avoid duplicating Nostalgex inside unrelated monorepos.
+**Source of truth:** this repository contains the **Android TV app** (in development), the **tvOS app**, the **public site** and the **web tuner** together. Read **[docs/REPOSITORY-LAYOUT.md](docs/REPOSITORY-LAYOUT.md)** for boundaries, deploy split, and how to avoid duplicating Nostalgex inside unrelated monorepos.
 
 ## Maintained
 
@@ -61,18 +70,26 @@ Native Apple TV app, free on the App Store, open source. Same channel logic and 
   - `Services/PlexAPIService.swift`, `Services/JellyfinAPIService.swift`, `Services/EmbyAPIService.swift` -- server clients
   - `Views/` -- TunerView, PlayerView, ChannelGuideView, etc.
  
+### Android TV (`android/`) -- in development
+Native Android TV (leanback) app, in this fork only. Not released. Target is parity with the tvOS app: the same channel rules, schedule and config, with Plex, Jellyfin and Emby handled by their own clients.
+
+- **Stack:** Kotlin, Gradle (`android/`). Kept out of the Xcode project and the other way round.
+- **Target:** Android TV, D-pad navigation only.
+- **Versioning:** `versionName` and `versionCode` in `android/app/build.gradle`.
+- **Status:** `android/` does not exist yet. The Gradle project is the next step. Build, test and install instructions will be added here once it builds.
+
 ### Public site (`index.html`)
 Marketing page and the path into the tuner and the App Store. Served at `/` on Vercel.
 
 ## Shared Config
 
 ### `channels.json`
-Both apps read the same channel configuration (131 channels in 14 bundles). The tvOS app bundles a copy and can also fetch an updated one at runtime.
+The tvOS, Android TV and web tuner read the same channel configuration (131 channels in 14 bundles). The tvOS app bundles a copy and can also fetch an updated one at runtime. Changing `channels.json` or the filter rules means updating every surface together, or they drift.
 
 See `CHANNELS.md` for a human-readable breakdown of each channel's rules and behavior.
 
 ### Schedule Logic
-Both apps use a deterministic daily-seeded shuffle. The item pool for each channel is shuffled once per day (seeded by date + channel ID), then laid out end-to-end in a loop. The current position in the loop is derived from unix time, so tuning in at 2:15 PM always lands at the same spot in the schedule for that day.
+The tvOS app and the web tuner use a deterministic daily-seeded shuffle. The Android port must match the tvOS behaviour. The item pool for each channel is shuffled once per day (seeded by date + channel ID), then laid out end-to-end in a loop. The current position in the loop is derived from unix time, so tuning in at 2:15 PM always lands at the same spot in the schedule for that day.
 
 When a video ends naturally on tvOS, the next video starts from the beginning (no mid-stream seek on auto-advance). On initial tune-in, you join mid-stream like real TV.
 
@@ -97,6 +114,9 @@ Channels filter your library (Plex, Jellyfin, or Emby, normalised to one interna
 npm install
 npm run dev
 ```
+
+### Android TV
+In development. Gradle project in `android/`. Build and test commands will be recorded here once confirmed.
 
 ### tvOS
 Open `Nostalgex/Nostalgex.xcodeproj` in Xcode. Build target is Nostalgex (tvOS).
@@ -150,7 +170,8 @@ Issues and pull requests are welcome. A few things that make them land faster:
 
 - The easiest first PR is a rule change in `channels.json` (a title on the wrong channel, a channel that is always empty). `CHANNELS.md` explains every rule field.
 - Keep PRs small and about one thing.
-- Web changes: `npm test` must pass. tvOS changes: build for a real Apple TV, not just the simulator, because the simulator keychain and storage behave differently.
+- Web changes: `npm test` must pass. tvOS changes: build for a real Apple TV, not just the simulator, because the simulator keychain and storage behave differently. Swift tests (`NostalgexTests`) must keep passing.
+- Android changes: check behaviour against the Swift code on the same inputs before calling it done. Every screen must work with a D-pad alone.
 - Not sure where to start? Ask in [Discord](https://discord.gg/FgnZcr5bDT) or open an issue first.
 - One person maintains this in their spare time. You will get a reply, but not always the same day.
 
