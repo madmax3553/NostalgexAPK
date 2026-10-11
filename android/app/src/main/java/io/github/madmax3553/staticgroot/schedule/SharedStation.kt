@@ -41,6 +41,8 @@ class CompanionSettings(context: Context) {
 @Serializable data class RegenerationDay(val channelId: Int, val dayKey: String, val blocks: List<StoredBlock>)
 @Serializable data class Regeneration(val generation: Int, val days: List<RegenerationDay>)
 @Serializable data class Selection(val channelId: Int? = null)
+@Serializable data class CatalogItem(val id: String, val title: String, val type: String, val seriesId: String?)
+@Serializable data class Catalog(val items: List<CatalogItem>)
 
 class SharedStation(private val base: String, key: String, stationId: String) {
     private val http = HttpUrlJellyfinHttp()
@@ -48,6 +50,10 @@ class SharedStation(private val base: String, key: String, stationId: String) {
     private val headers = mapOf("Authorization" to "Bearer $key", "Accept" to "application/json")
     private val root = "$base/v1/stations/$stationId"
     private var generation = 0
+    fun publishCatalog(items: List<MediaItem>) {
+        http.post("$root/catalog", headers, json.encodeToString(Catalog.serializer(),
+            Catalog(items.map { CatalogItem(it.id, it.title, it.type.raw, it.seriesId) })))
+    }
 
     fun setup(definitions: List<ChannelDefinition>, zone: String): StationSetup = json.decodeFromString(
         StationSetup.serializer(), http.post("$root/setup", headers, json.encodeToString(
@@ -58,12 +64,20 @@ class SharedStation(private val base: String, key: String, stationId: String) {
         val proposal = SharedDay(storedBlocks(blocks), generation)
         val saved = json.decodeFromString(SharedDay.serializer(), http.post(
             "$root/days/${ch.id}/$dayKey", headers, json.encodeToString(SharedDay.serializer(), proposal)))
-        return saved.blocks.map {
+        return resolve(saved, items)
+    }
+
+    fun existing(ch: ChannelRuntime, dayKey: String, items: Map<String, MediaItem>): List<Block>? = try {
+        resolve(json.decodeFromString(SharedDay.serializer(), http.get("$root/days/${ch.id}/$dayKey", headers)), items)
+    } catch (e: io.github.madmax3553.staticgroot.jellyfin.JellyfinException) {
+        if (e.status == 404) null else throw e
+    }
+
+    private fun resolve(saved: SharedDay, items: Map<String, MediaItem>): List<Block> = saved.blocks.map {
             val item = items[it.itemId] ?: throw IllegalStateException(
                 "A published programme is unavailable to this Jellyfin user. Use the same library permissions on both devices.")
             Block(item, it.startUnix, it.endUnix, it.isBumper, it.mediaOffsetSeconds, it.isMidBreak)
         }
-    }
 
     fun regenerate(days: List<Triple<Int, String, List<Block>>>) {
         val request = Regeneration(generation, days.map { (channel, day, blocks) ->

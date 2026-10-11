@@ -269,24 +269,32 @@ class MainActivity : Activity() {
         AppSession.lastChannelId = null
         if (shared != null) {
             runOnUiThread { status.text = "Loading published programmes…" }
+            shared.publishCatalog(items)
             val lookup = items.associateBy { it.id }
             val startDate = java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(stationZone).toLocalDate()
-            if (intent.getBooleanExtra("force_regenerate", false)) {
-                runOnUiThread { status.text = "Regenerating shared schedules…" }
-                val days = channels.flatMap { ch -> (0L..2L).map { offset ->
-                    val date = startDate.plusDays(offset)
-                    val start = date.atStartOfDay(stationZone).toEpochSecond()
-                    Triple(ch.id, date.toString(), AppSession.scheduler!!.dayBlocks(
-                        ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600))
-                } }
-                shared.regenerate(days)
-            }
-            for (ch in channels) for (offset in 0L..2L) {
+            val force = intent.getBooleanExtra("force_regenerate", false)
+            val candidates = ArrayList<Triple<Int, String, List<io.github.madmax3553.staticgroot.schedule.Block>>>()
+            for (offset in 0L..2L) {
                 val date = startDate.plusDays(offset)
                 val start = date.atStartOfDay(stationZone).toEpochSecond()
-                val proposed = AppSession.scheduler!!.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600)
-                val saved = shared.publish(ch, date.toString(), proposed, lookup)
-                AppSession.scheduler!!.installPublished(ch.id, start, saved)
+                val locked = HashSet<Int>()
+                val day = channels.associate { ch ->
+                    val existing = if (force) null else shared.existing(ch, date.toString(), lookup)
+                    if (existing != null) locked.add(ch.id)
+                    ch.id to (existing ?: AppSession.scheduler!!.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600))
+                }
+                // Premiere channels keep their anchor; existing published days are immutable.
+                locked.addAll(channels.filter { it.isPremiere }.map { it.id })
+                val optimized = io.github.madmax3553.staticgroot.schedule.GenerationReshuffler.optimize(day, start, locked)
+                Log.i(TAG, "GENERATION overlap-reducing swaps=${optimized.swaps}")
+                channels.forEach { ch -> candidates.add(Triple(ch.id, date.toString(), optimized.days.getValue(ch.id))) }
+            }
+            if (force) shared.regenerate(candidates)
+            for ((id, dayKey, proposed) in candidates) {
+                val ch = channels.first { it.id == id }
+                val start = java.time.LocalDate.parse(dayKey).atStartOfDay(stationZone).toEpochSecond()
+                val saved = shared.publish(ch, dayKey, proposed, lookup)
+                AppSession.scheduler!!.installPublished(id, start, saved)
             }
             AppSession.lastChannelId = shared.selection()
             AppSession.scheduler!!.usePublishedOnly()

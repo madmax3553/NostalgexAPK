@@ -67,6 +67,7 @@ object JellyfinMapping {
         return MediaItem(
             id = ep.Id,
             title = show.Name ?: ep.SeriesName.orEmpty(),
+            seriesId = show.Id,
             summary = ep.Overview ?: show.Overview.orEmpty(),
             type = MediaType.EPISODE,
             genres = show.Genres ?: emptyList(),

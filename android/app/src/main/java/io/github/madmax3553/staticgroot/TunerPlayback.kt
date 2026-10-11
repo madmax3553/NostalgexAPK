@@ -270,7 +270,9 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         endSession()
         entry = next
         changed()
-        resolve(entry!!, 0, generation)
+        val elapsed = io.github.madmax3553.staticgroot.schedule.ProgrammeBoundary.elapsedInBreak(
+            next.block, System.currentTimeMillis() / 1000)
+        resolve(entry!!, elapsed, generation)
     }
 
     private fun endSession() {
@@ -315,9 +317,12 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                         reportObservation("success")
                 }
             }
-            if (!commercialPlaying && current != null && !current.block.isBumper && player.isPlaying &&
-                player.currentPosition / 1000 >= current.block.mediaOffsetSeconds + current.block.durationSeconds) {
-                advance()
+            if (!commercialPlaying && current != null && !current.block.isBumper && player.isPlaying) {
+                val target = channel
+                val next = target?.let { AppSession.scheduleFor(it, current.endUnix) }
+                    ?.entries?.firstOrNull { it.startUnix >= current.endUnix }
+                if (io.github.madmax3553.staticgroot.schedule.ProgrammeBoundary.shouldInterrupt(
+                        current.block, next?.block, player.currentPosition / 1000)) advance()
             }
             if (player.isPlaying) Log.d("StaticGroot", "VIDEO playing positionMs=${player.currentPosition} frame=$firstFrame")
             changed()

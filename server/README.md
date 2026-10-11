@@ -96,6 +96,14 @@ then aligns the next showing to the quarter-hour.
 
 ## Playback profiles
 
+### Channel overlap audit
+
+`server/channel-audit.cjs` supports the original distinct-item comparison and a
+60% two-hour series-airtime comparison. See `docs/EPISODE-PROGRAMMING.md` for the
+metric and command. Android uploads the catalog through the authenticated
+`POST /v1/stations/{station}/catalog` endpoint. Catalog refresh does not replace
+published programme times. No automatic channel merging is implemented.
+
 The service stores observations independently of schedule generations. Each record
 is keyed by item ID, source freshness fingerprint (Jellyfin ETag/source/size/runtime)
 and Android decoder capability class. A changed source or different decoder class

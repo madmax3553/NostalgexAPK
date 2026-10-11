@@ -140,6 +140,18 @@ function createServer({ directory, token }) {
         body = JSON.parse(Buffer.concat(chunks).toString());
       }
       const station = parts[2];
+      if (parts[3] === 'catalog' && parts.length === 4 && req.method === 'POST') {
+        if (!Array.isArray(body.items) || body.items.length > 100000) throw new Error('Invalid catalog');
+        const catalog = {};
+        for (const item of body.items) {
+          if (typeof item.id !== 'string' || typeof item.title !== 'string' || !['movie', 'episode'].includes(item.type) ||
+              (item.seriesId != null && typeof item.seriesId !== 'string')) throw new Error('Invalid catalog item');
+          catalog[item.id] = { title: item.title, type: item.type, seriesId: item.seriesId || null };
+        }
+        const file = path.join(store.stationPath(station), 'catalog.json');
+        fs.writeFileSync(`${file}.tmp`, JSON.stringify(catalog), { mode: 0o600 }); fs.renameSync(`${file}.tmp`, file);
+        return reply(200, { items: body.items.length });
+      }
       if (parts[3] === 'playback' && parts.length === 4) {
         const profiles = new PlaybackProfiles(path.join(store.stationPath(station), 'playback'));
         if (req.method === 'POST') return reply(200, profiles.observe(body));

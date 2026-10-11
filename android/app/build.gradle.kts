@@ -23,8 +23,8 @@ android {
         // Placeholder floor. Set the real device floor during the port.
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.1.16"
+        versionCode = 21
+        versionName = "0.1.20"
     }
 
     buildTypes {

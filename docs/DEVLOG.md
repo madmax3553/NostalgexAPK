@@ -3,6 +3,141 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (session checkpoint)
+
+**Changed.** Committing the work through StaticGroot 0.1.20 (21): left-aligned
+GROOT header, protected programme endings, series catalog and overlap audits,
+generation-time block-preserving reshuffling, and the ordered-series programming
+design. The APK was installed on the test TV during development; the companion
+catalog endpoint was deployed previously. This checkpoint does not change the
+running service or regenerate published schedules.
+
+**Verified.** 126 Android unit tests and 14 server tests pass. Debug assembly and
+lint passed during the generation update. Diff whitespace checks pass.
+
+**Half-done.** Rolling prime-window freshness, server-owned series progression,
+autonomous horizon extension and adaptive transcoding remain pending. Generation
+reshuffling has synthetic regression coverage but its real-library improvement
+has not been measured. Complete programme-end verification is still needed.
+
+**Next.** Implement the server airing ledger and prime-window exposure scoring,
+then the staggered first-run planner documented in `docs/EPISODE-PROGRAMMING.md`.
+
+## 2026-10-10 (generation overlap reduction and freshness follow-up)
+
+**Changed.** StaticGroot 0.1.20 (21) performs a generation-only overlap-reduction
+pass using the 60% shared-airtime threshold in two-hour windows. It swaps complete
+equal-duration series/programme runs, keeping episode order inside each run,
+commercials, continuation offsets and clock alignment. TV runs move only to hourly
+starts and premiere channels stay anchored. Existing published days are fetched
+first and locked; new days can be optimized against them. Explicit regeneration
+optimizes the replacement horizon before publishing. No automatic merging.
+
+**Verified.** Assembly and 126 Android unit tests pass. Synthetic tests verify
+an overlapping pair moves intact, continuous timing and locked published references.
+This bounded heuristic is not guaranteed to find every improving arrangement;
+it only swaps compatible-length runs and samples twelve fixed windows each day.
+
+**Half-done.** Rolling prime-window freshness remains a documented follow-up in
+`docs/EPISODE-PROGRAMMING.md`. Existing history is local/yesterday-based, not a
+server-owned exposure policy. The required ledger should derive from published
+schedules, separate prime-window exposure from overnight reruns and avoid counting
+both old and regenerated allocations. Ordered first-run progression is still pending.
+Changes are uncommitted on `master`; actual overlap reduction on the TV has not
+been measured and published days remain unchanged until explicit regeneration.
+
+**Next.** Build the server airing ledger, configure station prime windows and use
+least-recently-exposed eligible titles there without shifting published promises.
+
+## 2026-10-10 (two-hour series-airtime overlap)
+
+**Shipped.** StaticGroot 0.1.19 (20) debug APK installed and companion image
+`staticgroot-schedules:0.1.19` deployed retaining station data. Changes are
+uncommitted on `master`.
+
+**Changed.** The viewing-overlap audit flags 60% shared programming across two
+hours (72 minutes), grouped by series rather than episode ID. A catalog uploaded
+by Android carries stable Jellyfin series IDs. Airtime is clipped to the window;
+breaks and off-air time are excluded, with the full two-hour denominator retained.
+The report measures shared programming mix, not necessarily simultaneous episode
+collisions. Existing published times are not changed by catalog upload or audit.
+No channels are merged automatically.
+
+**Verified.** Five audit tests cover series identity across different episodes,
+the exact 60% threshold, clipping, off-air exclusion and the original long-window
+metrics. Fourteen server tests and 124 Android tests pass; debug assembly succeeds.
+The deployed audit used the uploaded catalog with no unresolved item identities.
+The pair reported by the user did not meet the threshold in the later window
+sampled; the original observation window has not been reproduced. Personal
+library-derived report contents are not copied into this public log.
+
+**Next.** Sample successive two-hour windows and review consistently overlapping
+channels before consolidation. Ordered first-run slots and episode pairs remain
+unimplemented.
+
+## 2026-10-10 (ordered series programming direction and overlap audit)
+
+**Changed.** `docs/EPISODE-PROGRAMMING.md` records the next scheduling model:
+staggered station-wide first-run series slots, one home channel per series,
+ordered episode pairs, separate first-run/rerun cursors and no independent shifting
+of an episode inside a pair. Pair slots retain :00/:30 alignment. Publishing a
+future day must allocate progression once; viewing, another device or regeneration
+must not accidentally consume the next pair. The window and overflow roster still
+need decisions. This model is documented, not implemented.
+
+`server/channel-audit.cjs` adds a read-only overlap report for active published
+manifests. It counts unique aired items, excluding bumps, repeat frequency and
+continuation segments. Near-duplicate recommendations require 90% coverage both
+ways and at least three shared items. Three synthetic audit tests pass. An audit
+was run on the deployed service through a temporary script; no station files or
+channel settings were changed. Personal-library counts and report contents are
+not copied into this public log.
+
+**Half-done.** The report measures scheduled overlap, not full eligible pools.
+Episode order still uses the existing shuffle. Progression cursors, series IDs,
+the staggered timetable and first-run home-channel allocation remain to build.
+Changes are uncommitted on `master`.
+
+**Next.** Implement stable series identity and ordered pairs, then a server-owned
+staggered slot planner and progression transactions. Review full-pool overlap
+before proposing channel consolidation.
+
+## 2026-10-10 (do not truncate programme endings)
+
+**Shipped.** StaticGroot 0.1.18 (19), debug APK installed on the test TV.
+Assembly, lint and 124 Android tests pass. Changes are uncommitted on `master`.
+
+**Measured.** A programme transitioned to a bumper at media position 2,460 seconds
+(41 minutes) with no preceding natural-ended state. The tick loop treated the final
+scheduled segment's estimated end as a mandatory media cutoff, just like a planned
+midpoint intermission. This could discard remaining content when metadata and
+actual file duration differed, or a stored block was shorter than the file.
+
+**Changed.** Only an explicit midpoint break for the same item can interrupt media
+at a scheduled offset. Final segments wait for Media3's natural end. Late completion
+consumes inter-programme bumper time instead of truncating the ending. Three
+regression checks cover a synthetic 41-minute estimate with three minutes of actual
+content left, the intentional midpoint boundary and filler consumption.
+
+**Half-done.** The reported episode's full ending has not been observed after this
+fix. Published schedule estimates are unchanged; if a file overruns all available
+filler, playback can run late rather than cut the content. Accurate runtime and
+cross-device late-playback reconciliation remain follow-up work.
+
+**Next.** Verify the complete episode ending and subsequent bumper on hardware.
+
+## 2026-10-10 (header logo alignment)
+
+**Changed.** StaticGroot 0.1.17 (18) left-aligns the GROOT header mark with the
+programme information instead of centering it in the available navigation width.
+The shared renderer accepts alignment explicitly; station bumpers retain their
+centered composition. Changes are uncommitted on `master`.
+
+**Shipped.** Debug APK built and installed on the test TV. Visual confirmation
+is pending.
+
+**Next.** Check header alignment on the TV.
+
 ## 2026-10-10 (playback controls and session commit)
 
 **Changed.** StaticGroot 0.1.16 (17) adds a D-pad playback menu with Pause/Play,
