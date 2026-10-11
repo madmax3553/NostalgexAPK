@@ -200,7 +200,7 @@ class ChannelSchedulerTest {
     fun aStaleScheduleFailsTheCurrentCheck() {
         val now = 1_791_633_600L
         val s = ChannelScheduler(zone).schedule(channelId = 1, pool = pool, isPremiere = false, nowUnix = now)!!
-        assertTrue(!s.isCurrent(now + 3 * 3600))
+        assertTrue(!s.isCurrent(s.nowPlaying!!.endUnix))
     }
 
     @Test

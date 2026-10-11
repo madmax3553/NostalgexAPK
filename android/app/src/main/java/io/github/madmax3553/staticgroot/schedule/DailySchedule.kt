@@ -1,6 +1,7 @@
 package io.github.madmax3553.staticgroot.schedule
 
 import io.github.madmax3553.staticgroot.channels.MediaItem
+import io.github.madmax3553.staticgroot.channels.MediaType
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -16,7 +17,9 @@ import java.time.ZonedDateTime
  */
 
 /** One programme block on a channel's day. */
-data class Block(val item: MediaItem, val startUnix: Long, val endUnix: Long) {
+data class Block(val item: MediaItem, val startUnix: Long, val endUnix: Long,
+    val isBumper: Boolean = false, val mediaOffsetSeconds: Long = 0,
+    val isMidBreak: Boolean = false) {
     val durationSeconds: Long get() = endUnix - startUnix
 }
 
@@ -51,6 +54,81 @@ object LocalDays {
 }
 
 object DailyPacker {
+
+    /** Android station breaks: retain programme order and pad to local half-hour slots.
+     * The bumper carries the following item for its coming-next card, never for playback.
+     */
+    fun withBumpers(blocks: List<Block>, dayStart: Long, seconds: Long = 30): List<Block> {
+        require(seconds > 0)
+        val end = dayStart + 86400
+        val result = ArrayList<Block>()
+        val candidates = blocks.distinctBy { movieIdentity(it.item) ?: it.item.id }
+        val ordered = ArrayList<Block>()
+        val counts = HashMap<String, Int>()
+        var previous: String? = null
+        // Enough rounds for a full day even with one-minute clips. Lowest-count first
+        // balances showings; another title must intervene whenever one is available.
+        if (candidates.isNotEmpty() && candidates.all { movieIdentity(it.item) != null }) {
+            var projected = 0L
+            while (projected < 86400 && ordered.size < 1440) {
+                val eligible = candidates.filter { movieIdentity(it.item) != previous }
+                val next = (eligible.ifEmpty { candidates }).minBy { counts[movieIdentity(it.item)] ?: 0 }
+                val identity = movieIdentity(next.item)!!
+                ordered.add(next)
+                counts[identity] = (counts[identity] ?: 0) + 1
+                previous = identity
+                projected += (next.item.duration * 60L).coerceAtLeast(60)
+            }
+        } else ordered.addAll(blocks)
+        var cursor = dayStart
+        for ((index, block) in ordered.withIndex()) {
+            if (cursor >= end) break
+            val runtime = block.item.duration * 60L
+            if (runtime > 1800) {
+                val halfway = runtime / 2
+                val firstEnd = minOf(end, cursor + halfway)
+                result.add(Block(block.item, cursor, firstEnd))
+                cursor = firstEnd
+                if (cursor < end) {
+                    val breakEnd = minOf(end, cursor + 60)
+                    result.add(Block(block.item, cursor, breakEnd, true, halfway, true))
+                    cursor = breakEnd
+                }
+                if (cursor < end) {
+                    val finish = minOf(end, cursor + runtime - halfway)
+                    result.add(Block(block.item, cursor, finish, mediaOffsetSeconds = halfway))
+                    cursor = finish
+                }
+            } else {
+                val finish = minOf(end, cursor + runtime)
+                result.add(Block(block.item, cursor, finish))
+                cursor = finish
+            }
+            val next = ordered.getOrNull(index + 1) ?: break
+            if (cursor < end) {
+                val following = ordered.getOrNull(index + 2)
+                val startsShowBlock = next.item.type == io.github.madmax3553.staticgroot.channels.MediaType.EPISODE &&
+                    following?.item?.type == next.item.type && following.item.title == next.item.title &&
+                    (block.item.type != next.item.type || block.item.title != next.item.title)
+                val sameMovie = movieIdentity(block.item)?.let { it == movieIdentity(next.item) } == true
+                // A one-film library cannot alternate. A five-minute station break
+                // separates showings without the former hour-long padding.
+                val breakEnd = minOf(end, StationTiming.nextStart(cursor, dayStart,
+                    if (sameMovie) 300 else seconds, next.item.type, startsRepeatedShowBlock = startsShowBlock))
+                result.add(Block(next.item, cursor, breakEnd, isBumper = true))
+                cursor = breakEnd
+            }
+        }
+        if (cursor < end && result.isNotEmpty()) {
+            result.add(Block(result.last().item, cursor, end, isBumper = true))
+        }
+        return result
+    }
+
+    private fun movieIdentity(item: MediaItem): String? = if (item.type == MediaType.MOVIE &&
+        item.librarySource != io.github.madmax3553.staticgroot.channels.LibrarySource.MUSIC_VIDEO)
+        item.tmdbID?.let { "tmdb:$it" } ?: "${io.github.madmax3553.staticgroot.channels.stripTrailingYearSuffix(item.title.lowercase())}:${item.year ?: ""}"
+        else null
 
     /** Packs one local day for a channel's pool. Pure: the same inputs give the same blocks. */
     fun packDay(
@@ -187,19 +265,28 @@ data class ChannelSchedule(
 class ChannelScheduler(
     private val zone: ZoneId,
     private val history: AiredHistory = NoHistory,
+    private var requirePublished: Boolean = false,
 ) {
     private val dayCache = HashMap<String, List<Block>>()
+    private val published = HashMap<String, List<Block>>()
 
-    fun clear() = dayCache.clear()
+    @Synchronized fun installPublished(channelId: Int, dayStart: Long, blocks: List<Block>) {
+        published["$channelId|$dayStart"] = blocks
+    }
+    @Synchronized fun usePublishedOnly() { requirePublished = true }
+
+    @Synchronized fun clear() = dayCache.clear()
 
     /** The blocks of the local day containing [unix], for one channel's pool. */
-    fun dayBlocks(channelId: Int, pool: List<MediaItem>, isPremiere: Boolean, unix: Long): List<Block> {
+    @Synchronized fun dayBlocks(channelId: Int, pool: List<MediaItem>, isPremiere: Boolean, unix: Long): List<Block> {
         val dayStart = LocalDays.startOfDayUnix(unix, zone)
+        published["$channelId|$dayStart"]?.let { return it }
+        if (requirePublished) return emptyList()
         val key = "$channelId|$dayStart|${pool.size}|${pool.firstOrNull()?.id}|${pool.lastOrNull()?.id}"
         return dayCache.getOrPut(key) {
             val yesterdayStart = dayStart - 86400
             val yKey = LocalDays.dayKey(yesterdayStart, zone)
-            val packed = DailyPacker.packDay(
+            val programmes = DailyPacker.packDay(
                 pool = pool.filter { it.duration > 0 },
                 dayStartUnix = dayStart,
                 dayNumber = LocalDays.dayNumber(unix, zone),
@@ -208,7 +295,8 @@ class ChannelScheduler(
                 yesterdayAiredKeys = history.airedKeys(channelId, yKey),
                 yesterdayLastItemId = history.lastAired(channelId, yKey),
             )
-            history.record(channelId, LocalDays.dayKey(unix, zone), packed.map { it.item.id })
+            val packed = DailyPacker.withBumpers(programmes, dayStart)
+            history.record(channelId, LocalDays.dayKey(unix, zone), packed.filterNot { it.isBumper }.map { it.item.id })
             packed
         }
     }

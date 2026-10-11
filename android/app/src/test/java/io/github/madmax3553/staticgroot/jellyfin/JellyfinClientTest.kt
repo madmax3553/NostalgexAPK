@@ -106,6 +106,26 @@ class JellyfinClientTest {
         assertTrue(http.calls.last().url.contains("Secret=s3cret"))
     }
 
+    @Test
+    fun commercialRefreshReadsOnlyTheCommercialLibrary() {
+        val http = FakeHttp(mapOf(
+            "/UserViews" to """{"Items":[{"Id":"ads","Name":"COMMERCIALS"},{"Id":"films","Name":"Movies"}]}""",
+            "/Items" to """{"Items":[{"Id":"ad1","RunTimeTicks":300000000}],"TotalRecordCount":1}""",
+        ))
+        val client = JellyfinClient("http://host:8096", http, deviceId, "tok", "u1")
+        assertEquals(30L, client.loadCommercials().single().durationSeconds)
+        assertTrue(http.calls.last().url.contains("ParentId=ads"))
+        assertFalse(http.calls.any { it.url.contains("ParentId=films") })
+        assertEquals(2, http.calls.size)
+    }
+
+    @Test
+    fun hevcIsAdvertisedOnlyWhenTheDeviceCanDecodeIt() {
+        assertEquals("h264", DeviceProfiles.forDevice(false).DirectPlayProfiles.single().VideoCodec)
+        assertEquals("h264,hevc", DeviceProfiles.forDevice(true).DirectPlayProfiles.single().VideoCodec)
+        assertEquals("h264", DeviceProfiles.forDevice(true).TranscodingProfiles.single().VideoCodec)
+    }
+
     // -- Libraries --------------------------------------------------------------------
 
     @Test
@@ -196,8 +216,17 @@ class JellyfinClientTest {
         assertTrue(r.isDirectPlay)
         val body = http.calls.single().body!!
         assertTrue(body.contains("\"DirectPlayProfiles\""))
-        assertTrue(body.contains("\"Container\":\"mp4,m4v,mov\""))
+        assertTrue(body.contains("\"Container\":\"mp4,m4v,mov,mkv\""))
         assertTrue(body.contains("\"Protocol\":\"hls\""))
+        assertFalse("Jellyfin offset must be applied by the player, not twice", body.contains("StartTimeTicks"))
+    }
+
+    @Test
+    fun everyPlaybackRequestCanAuthenticateWithoutInheritedQueryParameters() {
+        val client = JellyfinClient(serverUrl, FakeHttp(emptyMap()), deviceId, "tok", "u1")
+        assertEquals("tok", client.playbackHeaders()["X-Emby-Token"])
+        assertTrue(client.playbackHeaders().getValue("Authorization").contains("Token=\"tok\""))
+        assertTrue(client.playbackHeaders().getValue("Authorization").contains("Client=\"StaticGroot\""))
     }
 
     // -- Item mapping -----------------------------------------------------------------

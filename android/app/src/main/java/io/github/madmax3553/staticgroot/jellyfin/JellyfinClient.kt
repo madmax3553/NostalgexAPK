@@ -5,6 +5,8 @@ import io.github.madmax3553.staticgroot.channels.MediaItem
 import java.net.URLEncoder
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /*
  * Port of the Jellyfin path in tvOS JellyfinAPIService.swift, music-video subset.
@@ -24,12 +26,37 @@ class JellyfinClient(
     private val userId: String = "",
 ) {
     val serverUrl: String = normalizeServerUrl(serverUrl)
+    fun stationIdentity(): String {
+        val response = http.get(url("/System/Info/Public"), mapOf("Accept" to "application/json"))
+        val info = json.parseToJsonElement(response).jsonObject
+        val serverId = info["Id"]?.jsonPrimitive?.content ?: throw IllegalStateException("Jellyfin server identity missing")
+        return io.github.madmax3553.staticgroot.schedule.SharedStation.stationId(serverId, userId)
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val playbackJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val learnedCache = java.util.concurrent.ConcurrentHashMap<String, PlaybackSettings>()
+    private val hevc by lazy { DeviceProfiles.supportsHevc() }
+    fun invalidateLearnedPlayback(itemId: String, source: String, device: String) {
+        learnedCache.remove("$itemId|$source|$device")
+    }
+    private val deviceClass by lazy {
+        // Decoder implementation names distinguish TVs with different hardware support.
+        val codecs = runCatching { android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS)
+            .codecInfos.filter { !it.isEncoder }.map { it.name }.sorted().joinToString("|") }.getOrDefault("unknown")
+        "android-v1-" + java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$hevc|$codecs".toByteArray()).joinToString("") { "%02x".format(it) }
+    }
 
     private fun headers(): Map<String, String> = mapOf(
         "Accept" to "application/json",
         "Authorization" to authorizationHeader(deviceId, accessToken),
+    )
+
+    /** HLS child playlists and segments must authenticate too; query strings aren't inherited. */
+    fun playbackHeaders(): Map<String, String> = mapOf(
+        "Authorization" to authorizationHeader(deviceId, accessToken),
+        "X-Emby-Token" to accessToken,
     )
 
     /** Libraries (views) for the signed-in user, with their section type. */
@@ -45,6 +72,11 @@ class JellyfinClient(
      * Total items of one Jellyfin item type under a library, with no page read. Diagnostic:
      * shows whether a library's clips are stored as "Movie" or as "MusicVideo".
      */
+    fun loadCommercials(): List<CommercialClip> = loadSections()
+        .filter { CommercialClips.isLibrary(it.title) }
+        .flatMap { loadItems(it.id, "Movie,Video,MusicVideo") }
+        .mapNotNull(CommercialClips::fromItem).distinctBy { it.id }
+
     fun countItems(parentId: String, includeItemTypes: String): Int {
         val body = http.get(
             url(
@@ -104,22 +136,50 @@ class JellyfinClient(
      * URL wins, then a static direct-play stream. Returns null when neither exists.
      */
     fun resolvePlayback(itemId: String): PlaybackResolution? {
-        val body = json.encodeToString(
-            PlaybackInfoBody.serializer(),
-            PlaybackInfoBody(DeviceProfiles.forDevice()),
-        )
-        val response = http.post(
+        fun negotiate(settings: PlaybackSettings): PlaybackInfoResponse {
+            val body = playbackJson.encodeToString(PlaybackInfoBody.serializer(),
+                PlaybackInfoBody(DeviceProfiles.forDevice(hevc, settings)))
+            return json.decodeFromString(PlaybackInfoResponse.serializer(), http.post(
             url("/Items/$itemId/PlaybackInfo", "userId" to userId),
             headers(),
             body,
-        )
-        val info = json.decodeFromString(PlaybackInfoResponse.serializer(), response)
-        return PlaybackResolver.resolve(
+            ))
+        }
+        var settings = PlaybackSettings()
+        var info = negotiate(settings)
+        val source = info.MediaSources.orEmpty().firstOrNull()
+        // No freshness facts means no reusable record. Do not assume an item ID implies
+        // the same file after replacement/re-encoding.
+        val fingerprint = source?.ETag?.takeIf { it.isNotBlank() }?.let {
+            "${source.Id}|$it|${source.Size}|${source.RunTimeTicks}"
+        }
+        val shared = io.github.madmax3553.staticgroot.AppSession.sharedStation
+        if (fingerprint != null && shared != null) {
+            val key = "$itemId|$fingerprint|$deviceClass"
+            val preferred = learnedCache[key] ?: runCatching {
+                shared.learnedPlayback(itemId, fingerprint, deviceClass).preferred
+            }.getOrNull()?.also { learnedCache[key] = it }
+            if (preferred != null && preferred != settings) {
+                runCatching { stopPlayback(info.PlaySessionId) }
+                settings = preferred
+                info = negotiate(settings)
+            }
+        }
+        val resolution = PlaybackResolver.resolve(
             info = info,
             serverUrl = serverUrl,
             itemId = itemId,
             apiKey = accessToken,
         )
+        return resolution?.copy(sourceFingerprint = fingerprint, deviceProfile = deviceClass,
+            settings = settings, itemId = itemId)
+    }
+
+    /** Releases the server encode when switching programmes or leaving playback. */
+    fun stopPlayback(sessionId: String?) {
+        if (sessionId.isNullOrEmpty()) return
+        http.post(url("/Sessions/Playing/Stopped"), headers(),
+            "{\"PlaySessionId\":\"$sessionId\"}")
     }
 
     /** Builds an absolute URL with query parameters encoded. */
@@ -133,7 +193,7 @@ class JellyfinClient(
 
         fun authorizationHeader(deviceId: String, token: String): String {
             val fields = mutableListOf(
-                "Client=\"Nostalgex\"",
+                "Client=\"StaticGroot\"",
                 "Device=\"Android TV\"",
                 "DeviceId=\"$deviceId\"",
                 "Version=\"0.1.0\"",
@@ -248,7 +308,9 @@ data class LibrarySection(
 data class QuickConnectStart(val code: String, val secret: String)
 
 /** The resolved playback URL, and whether it is a direct file or a server transcode. */
-data class PlaybackResolution(val url: String, val playSessionId: String?, val isDirectPlay: Boolean)
+data class PlaybackResolution(val url: String, val playSessionId: String?, val isDirectPlay: Boolean,
+    val sourceFingerprint: String? = null, val deviceProfile: String? = null,
+    val settings: PlaybackSettings = PlaybackSettings(), val itemId: String? = null)
 
 /** Pure resolution, so the precedence rules can be tested without a server. */
 object PlaybackResolver {

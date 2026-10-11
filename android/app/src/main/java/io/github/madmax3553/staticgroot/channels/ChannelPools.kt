@@ -9,10 +9,12 @@ data class ChannelRuntime(
     val definition: ChannelDefinition,
     /** The pool the scheduler packs. Already time-restricted for [hour]. */
     val pool: List<MediaItem>,
+    val unrestrictedPool: List<MediaItem> = pool,
 ) {
     val id: Int get() = definition.id
     val number: Int get() = definition.number
-    val name: String get() = definition.name
+    val name: String get() = definition.name.replace("nostalgex", "StaticGroot", ignoreCase = true)
+        .let { if (definition.name == definition.name.uppercase()) it.uppercase() else it }
     val isPremiere: Boolean get() = definition.premiere
 }
 
@@ -38,7 +40,7 @@ object ChannelPools {
                 category = ch.category,
                 clock = clock,
             )
-            ChannelRuntime(ch, filteredPool(matched, ch.timeRestrictions, hour))
+            ChannelRuntime(ch, filteredPool(matched, ch.timeRestrictions, hour), matched)
         }
     }
 }

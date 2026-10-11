@@ -50,4 +50,5 @@ data class MediaItem(
     val studio: String? = null,
     val tmdbID: String? = null,
     val librarySource: LibrarySource? = null,
+    val summary: String = "",
 )

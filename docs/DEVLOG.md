@@ -3,6 +3,478 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-10 (playback controls and session commit)
+
+**Changed.** StaticGroot 0.1.16 (17) adds a D-pad playback menu with Pause/Play,
+Return to live and a saved captions toggle. Fullscreen OK or Up opens the menu;
+Settings also exposes it. The Play/Pause remote key toggles playback directly.
+Pause holds the station-break countdown as well as video, and resume excludes
+the paused interval from playback-learning measurements. Return to live retunes
+at the current station-clock position. Captions enable available Media3 text
+tracks with the device language preference; server-side subtitle burning and
+external subtitle acquisition are not implemented.
+
+**Shipped.** Debug APK 0.1.16 (17) installed on the test TV. Assembly, lint,
+121 Android tests and nine server tests pass.
+
+**Half-done.** Hardware verification of pause, live return and captions is pending.
+All accumulated Android tuner, station scheduling, companion deployment and
+playback-learning work is being committed and pushed to `master` under Batman.
+Adaptive quality stepping and encoder-speed collection remain unfinished.
+
+**Next.** Verify controls and actual subtitle availability on the TV, then finish
+the adaptive playback work using the stored observations.
+
+## 2026-10-10 (persistent playback learning and malformed media investigation)
+
+**Shipped.** StaticGroot 0.1.15 (16) debug APK installed, companion
+`staticgroot-schedules:0.1.15` deployed retaining its data volume. Changes remain
+uncommitted on `master`.
+
+**Changed.** Playback profiles persist separately from schedule generations. Keys
+include Jellyfin item, source freshness (ETag/source/size/runtime) and decoder class.
+Android records startup, playhead progress, wall time and attempted bitrate/height.
+Settings become preferred after at least 30 seconds of near-real-time playback;
+failures invalidate matching preferences. Matching profiles are retrieved on later
+negotiation. Media changes and different decoder classes do not inherit stale
+results. Sources with no ETag are not reusable. No tokens or stream URLs are stored
+in profiles. FFmpeg encoder speed remains null until a separate collector exists.
+
+**Measured.** A reported failing 720p HEVC/AAC fixture has frame-RPS errors and
+an invalid EBML number at the same file offset across server attempts, often with
+zero output frames. A direct attempt on the TV also returned an I/O failure. This
+is evidence of malformed source/container data, not just a slow encode. Another
+item initially examined was identified as a different title and excluded from
+that diagnosis. No source file was modified.
+
+**Verified.** 121 Android tests and nine server tests pass. Profile tests cover
+restart persistence, capability/source separation, rejecting short success samples
+and invalidating failed preferences. Assembly and lint pass (lint before the final
+failure-cache adjustment). Deployment and APK installation succeeded.
+
+**Half-done.** Adaptive quality stepping, background library probing, encoder speed
+collection and real-device profile persistence verification remain pending. Time
+Trax is diagnosed but not repaired; lowering output quality cannot fix corrupt
+input data. PlaybackInfo remains necessary for current source/session validation.
+
+**Next.** Verify profile records on the server after a sustained TV session and a
+failure, then wire encoder measurements and quality selection. Investigate a clean
+source or non-destructive remux of the malformed fixture with explicit approval.
+
+## 2026-10-10 (UHD seek and GPU investigation)
+
+**Measured.** The failing UHD conversion uses software `libx264`, two threads,
+HDR-to-SDR tone mapping and a 2560-pixel scale. The inspected FFmpeg command has no
+`-ss` and starts HLS numbering at zero. It generated 22.60 seconds in 75.69 seconds
+(0.299x real time). Client seeking to a later segment can therefore worsen startup;
+even an efficient server seek would not fix the below-real-time throughput.
+
+The Docker host GPU is NVIDIA GK107M, GeForce GT 640M Mac Edition. It predates
+hardware HEVC decoding. The container has the render device mapped, but the VA-API
+probe fails loading the nouveau video driver. No working GPU acceleration was
+established. No server configuration or app playback behaviour was changed.
+
+**Next.** Test a pre-converted compatible version or an explicitly lower-resolution
+transcode on the same input. Measure startup and sustained play separately. A proper
+seek path and a fast enough encode are both needed for scheduled UHD tune-in.
+
+## 2026-10-10 (shorter single-film breaks and UHD stream diagnosis)
+
+**Shipped.** StaticGroot 0.1.14 (15) debug APK installed on the test TV and
+companion image `staticgroot-schedules:0.1.14` deployed with the existing volume.
+Assembly, 119 Android tests and six server tests pass. Changes are uncommitted.
+
+**Changed.** Single-film channels now insert at least five minutes of station
+programming before a repeat, rather than an hour, followed by quarter-hour
+alignment. The server validator uses the same five-minute spacing. Existing
+published days are preserved: Force regenerate is required to adopt the shorter
+breaks. Hourly TV-block alignment and other start rules are unchanged.
+
+**Measured.** Active published schedules contained 271 inter-programme breaks
+longer than 15 minutes; the longest was 4,440 seconds (74 minutes), caused by
+single-film spacing plus alignment. A reported failing UHD fixture was MKV,
+3840x2160 HEVC Main 10, Dolby Vision Profile 7/HDR10, about 89 Mbps video, stereo
+24-bit FLAC. Its H.264 software transcode ran at about 0.31x real time, insufficient
+for sustained playback. Jellyfin hardware acceleration is configured as none.
+No GPU, encoding, media-file or bitrate settings were changed by this session.
+
+**Next.** Regenerate and measure the new break distribution. Inspect GPU capabilities
+and test hardware transcoding or a compatible lower-bitrate version for the UHD
+fixture. The failing stream is diagnosed, not fixed.
+
+## 2026-10-10 (channel return, commercial refresh and HEVC negotiation)
+
+**Shipped.** StaticGroot 0.1.13 (14) debug APK installed on the test TV. Assembly,
+lint and 119 unit tests pass. Changes remain uncommitted on `master`.
+
+**Changed.** Settings has Return to playing channel, which restores that guide row
+and current-time window without retuning, plus Previous channel, which swaps to
+the last tuned channel. The remote Last Channel key uses the same action. Settings
+content scrolls to keep the growing list reachable with a D-pad.
+
+Refresh commercials only reads the Commercials library and replaces the local ad
+pool for subsequent breaks. It leaves programme pools, airing times and published
+manifests untouched. Synthetic transport tests verify only the commercial library
+is fetched and sub-minute runtime is retained. A failed refresh retains the old pool.
+
+**Measured.** A failing film's Jellyfin transcode log reported HEVC frame-RPS errors
+and zero output frames after 5.44 seconds. The app had advertised H.264 only, forcing
+server conversion of HEVC. Android now queries MediaCodecList and advertises HEVC
+direct play only when the device exposes a decoder, retaining H.264 for server
+transcodes. Synthetic tests verify both device profiles. This is not yet a confirmed
+fix for the failing film; malformed HEVC may fail on the device too.
+
+**Half-done.** Return actions, refreshed commercial playback and direct HEVC on the
+reported film need hardware verification. The app does not repair media files or
+change Jellyfin hardware acceleration. Existing stream/session handling limitations
+remain.
+
+**Next.** Retry the reported film with this build and compare first-frame/playhead
+measurements with the server's transcode output. Check a commercial refresh without
+changing published schedule hashes.
+
+## 2026-10-10 (force regeneration and balanced movie repeats)
+
+**Shipped.** StaticGroot 0.1.12 (13) debug APK installed on the test TV.
+Companion image `staticgroot-schedules:0.1.12` replaced the deployed container,
+retaining its persistent volume and service key. Changes are uncommitted on `master`.
+
+**Changed.** Movie channels no longer stop scheduling after one showing per day.
+Version-deduplicated pools are rotated in balanced rounds, choosing least-aired
+movies and avoiding the previous movie when alternatives exist. Additional rounds
+are used only to fill the day. A one-film channel inserts at least an hour of
+station content before replaying it. Breaks and midpoint continuations are not
+counted as new showings. There is no hard two-showing cap: larger pools need fewer
+rounds and small pools need more.
+
+Settings includes Force regenerate schedules. It reloads the library, rebuilds
+three days and sends a complete replacement to the companion. The server validates
+an isolated generation and changes its active pointer only after all days pass.
+Old files remain for rollback/inspection. Invalid replacements leave the active
+lineup unchanged. The dialog warns that regeneration changes advertised times;
+other TVs need to restart. Stale clients are rejected when publishing new days
+against an old generation.
+
+**Verified.** Six server tests and 117 Android tests pass, including balanced
+rotation, no consecutive repeats, version deduplication, one-film spacing,
+atomic regeneration, stale-generation rejection and failed-regeneration retention.
+Debug assembly and lint pass. Server redeployment and APK installation succeeded.
+
+**Half-done.** The force-regenerate UI has not been exercised on hardware. Existing
+published real schedules remain active until the user invokes regeneration. The
+two-showings target is approximated by balanced least-aired rotation, not by a
+global optimisation of airtime slots. Shared horizon refresh remains pending.
+
+**Next.** Force regenerate on the TV and verify another device loads the same
+generation. Measure per-channel repeat distribution and filler against real pools.
+
+## 2026-10-10 (companion deployed alongside Jellyfin)
+
+**Shipped.** Companion image `staticgroot-schedules:0.1.11` deployed as container
+`staticgroot-schedules` on the Jellyfin Docker host, serving port 8787 with
+restart-unless-stopped and persistent volume `staticgroot-schedules`. A generated
+service key is kept outside the repository. The existing StaticGroot 0.1.11 (12)
+TV installation is configured through its encrypted service settings.
+
+**Verified.** Missing authentication gets HTTP 401. An authenticated synthetic
+day survived a container restart and a conflicting publication unchanged.
+The TV published/retrieved 393 manifests (131 channels across three days), then
+the container and TV app were restarted. The SHA-256 digest of all published day
+files was identical before and after, demonstrating that advertised times were
+not regenerated on this round trip. Most service requests completed in 6-12 ms
+on the tested LAN.
+
+**Half-done.** A second physical TV has not been configured or tested. Initial
+schedule proposals still come from Android; autonomous scanning and background
+horizon extension remain pending. No changes were made to the Jellyfin container.
+Repository changes remain uncommitted on `master`.
+
+**Next.** Configure the second TV with the same service key and Jellyfin user,
+verify the last tuned channel and future airtimes, then implement horizon refresh.
+
+## 2026-10-10 (movie repeat guard and shared station service)
+
+**Changed.** StaticGroot 0.1.11 (12) limits movies to one showing per channel per
+local day, deduplicating by TMDB identity or normalized title/year. A midpoint
+continuation is part of the same showing. After the pool is exhausted the channel
+fills with station breaks rather than repeating a movie. Music-video rotation is
+excluded from this rule. A movie may return on a later day; this is not a lifetime
+ban on repeats.
+
+`server/` contains a standalone Node companion and Dockerfile. It persists shared
+channel definitions, enabled flags, station time zone, full day manifests and last
+tuned channel. The first published day wins; later clients cannot overwrite its
+times with a new pool or proposal. Setup flag updates use version checks. Requests
+require a service key; Android stores the URL/key in encrypted local preferences.
+The service never receives Jellyfin credentials. Android Settings exposes the
+connection, and launch retrieves today plus two following days before showing the
+guide. Shared mode refuses to invent local days outside that horizon.
+
+**Verified.** Four Node tests cover restart persistence, conflicting device proposals,
+duplicate-movie rejection versus midpoint continuation, setup version conflicts and
+HTTP authentication. Android assembly, lint and 116 unit tests pass, including
+movie version/wrap deduplication and published-day precedence.
+
+**Half-done.** Changes are uncommitted on `master`. The service has not been
+deployed on the Jellyfin host or verified with two TVs. Clients still compute the
+initial candidate schedules; the service is a persistence/publication authority,
+not an autonomous Jellyfin scanner. Background horizon extension is not implemented;
+restart at least every two days. Last-channel synchronization is best effort.
+Station setup uses the same Jellyfin server/user on all devices. This continues
+the live station clock, not a paused private bookmark. Time gates and DST edge
+cases need further integration checks before shared scheduling is production-ready.
+
+**Next.** Deploy using `server/README.md`, configure both devices, and verify that
+a published programme two hours ahead remains unchanged across restart and device
+switch. Then add background horizon refresh and server-owned library scanning.
+
+## 2026-10-10 (TV half-hours and hourly repeated-show blocks)
+
+**Shipped.** StaticGroot 0.1.10 (11), debug APK installed on the test TV.
+Assembly and 114 unit tests pass. Changes remain uncommitted on `master`.
+
+**Changed.** Corrected the requested TV station rule: ordinary episode starts
+use the next :00 or :30; the 14-minute/quarter-hour fallback is removed. When a
+new run contains two or more consecutive episodes of the same series, its first
+episode starts on the next hour. Subsequent episodes in that run use half-hours.
+Movie starts remain quarter-hour aligned. The minimum ident and midpoint breaks
+remain part of the elapsed schedule. Tests cover the first/repeated episode
+distinction and ordinary series switches. Real commercial transitions still
+require hardware validation.
+
+**Next.** Verify the corrected TV grid and a commercial break with the library.
+
+## 2026-10-10 (Commercials library and mixed station slots)
+
+**Shipped.** StaticGroot 0.1.9 (10), debug APK installed on the test TV. Changes
+remain uncommitted on `master`.
+
+**Changed.** Libraries named Commercials, ignoring case and surrounding spaces,
+are loaded separately and never feed regular channel pools. Commercial runtime is
+kept in seconds so 15- and 30-second clips are not dropped by minute rounding.
+Breaks fit whole clips without repetition inside a break and reserve ten seconds
+for the GROOT ident. Missing clips, no fitting clips and playback failures fall
+back to the animated station card. Break deadlines cap playback so ads cannot
+push the next programme indefinitely. No YouTube integration or downloading.
+
+The requested station rule replaces the previous half-hour rule: movies use the
+next quarter-hour. TV uses the next hour when the wait is at most 14 minutes;
+otherwise it uses the next quarter-hour. The minimum inter-programme ident is
+30 seconds. Runtime includes one scheduled 60-second midpoint break for movies
+and episodes longer than 30 minutes. The second segment stores the original-media
+offset, so tuning after the break and resuming do not count commercial time as
+programme content. This is a StaticGroot-specific extension, not Swift parity.
+
+**Verified.** Assembly, lint and 112 unit tests pass. Synthetic checks cover the
+14-minute TV threshold, quarter-hour movie starts, short clip duration, fitting
+clips with an ident tail, midpoint segments and content offsets. Installation
+succeeded. Actual commercial playback, failure fallback, programme pause/resume
+and the full station-clock transition have not been verified with a commercial
+library. HLS playback remains limited by the existing segment stalls.
+
+**Next.** Add a Jellyfin video library named Commercials, rescan, then verify a
+short ad-to-ident-to-programme transition with a direct-play fixture. Confirm
+midpoint resume against a known frame/time before relying on long sessions.
+
+## 2026-10-10 (half-hour starts and animated filler)
+
+**Shipped.** StaticGroot 0.1.8 (9), debug APK installed on the test TV. Changes
+remain uncommitted on `master`.
+
+**Changed.** Station breaks now fill the gap to the next local half-hour boundary,
+including a minimum 30-second ident. A 22-minute episode receives eight minutes of
+filler. A programme ending exactly on a boundary receives a 30-minute break to
+preserve the ident before the following boundary. This is an explicit StaticGroot
+schedule extension, not upstream schedule parity. Actual natural ends calculate
+the break deadline from the current clock before starting the next programme.
+The bumper pulses the original GROOT mark and moves a blue sweep through the
+background, with a minutes-and-seconds countdown. Animation stops when hidden.
+
+The first keypress during an idle crawl is consumed to stop scrolling and select
+the channel nearest the visible centre, including fractional scrolling and wrap.
+The next keypress performs navigation or tuning. It no longer jumps to the tuned
+channel.
+
+**Verified.** Debug assembly, lint and 108 unit tests pass. Timing checks cover
+half-hour starts, preserved episode runtime, minimum-ident boundary behaviour,
+contiguous coverage and midnight clipping. Navigation checks cover fractional
+centre selection and wrapping. Hardware animation and natural transitions are
+not yet verified.
+
+**Next.** Verify a full filler-to-programme transition and crawl interruption on
+the remote. Commercial clips are a follow-up: prefer a user-curated local Jellyfin
+library, fitting whole clips into the remaining break and filling the tail with
+the station ident. YouTube links are a discovery source, not a reliable scheduled
+stream; importing files should be an explicit user action for material they can use.
+No commercial fetching or downloads are implemented.
+
+## 2026-10-10 (original GROOT mark and Cyberdream palette)
+
+**Shipped.** StaticGroot 0.1.7 (8), debug APK installed on the test TV. Changes
+remain uncommitted on `master`.
+
+**Changed.** The generic ASCII wordmark is replaced with the owner's original
+nine-line shaded-block GROOT mark, referenced from `system/groot-splash.sh` in the
+personal scripts repository. Header and bumper share one renderer with a monospace
+font to preserve the block alignment. The script `system/sync-colors.sh` identifies
+Cyberdream as the palette; app surfaces now use its charcoal `#16181a`, raised
+surface `#3c4048`, blue `#5ea1ff` and cyan `#5ef1ff`. Blue marks focus and the logo;
+cyan marks the time indicator, progress bar and Settings label. Channel colours
+continue to distinguish individual channels.
+
+**Verified.** A TV screenshot confirmed the block glyphs render correctly, the
+blue/cyan palette appears, and both upcoming-programme lines fit below the synopsis.
+Assembly, lint and 104 unit tests pass. Bumper use of the shared logo renderer is
+implemented but not captured on device.
+
+**Next.** Observe a station bumper with the new mark and continue playback repairs.
+
+## 2026-10-10 (preview crop, idle crawl and programme information)
+
+**Shipped.** StaticGroot 0.1.6 (7), debug APK installed on the test TV. Changes
+are uncommitted on `master`.
+
+**Changed.** Preview always center-crops to fill 4:3, including when Retro Mode
+is off. Retro Mode controls CRT effects and fullscreen cropping. After 30 seconds
+without input the guide crawls upward at one row per eight seconds, wrapping at
+the end without retuning playback. Input restores the selected row. Fullscreen
+and Settings pause the crawl.
+
+Android channel labels replace Nostalgex with StaticGroot; shared identifiers and
+filter rules are unchanged. The header has an ASCII GROOT wordmark. Programme
+information now includes Jellyfin's episode/movie overview, coloured metadata,
+airtimes, minutes remaining, a progress bar and the next two programmes.
+
+**Verified.** Device screenshots confirmed cropped video filling the preview,
+the ASCII logo, StaticGroot channel labels, the synopsis, and upward guide movement
+while the same programme kept playing. Debug assembly and 104 unit tests pass;
+lint passed before the final spacing-only adjustment. A screenshot showed up-next
+clipping, so text size and synopsis length were reduced; the final adjusted panel
+has not yet been captured. Existing HLS limitations still apply.
+
+**Next.** Check final information-panel readability and crawl interruption with
+the physical remote; continue playback and full-manifest persistence fixes.
+
+## 2026-10-10 (larger preview)
+
+**Changed.** StaticGroot 0.1.5 (6) gives the preview 60% of screen height instead
+of 51.43%. At 1920x1080 its 4:3 frame grows from about 740x555 to 864x648,
+about 36% more area. The information panel narrows and the guide keeps the bottom
+40%. Video, bumper and CRT overlay use the same centered frame. Retro Mode still
+crops to fill 4:3 by default; disabling it fits the original image.
+
+**Shipped.** Debug APK installed on the test TV. Assembly and 104 unit tests pass.
+Changes are uncommitted on `master`. Visual verification pending.
+
+**Next.** Check the larger preview and guide readability on the TV.
+
+## 2026-10-10 (settings return navigation)
+
+**Changed.** StaticGroot 0.1.4 (5): Back from the guide opens Settings directly
+without scrolling to channel one. Menu does the same. Both remember the highlighted
+channel and restore its row and scroll position on Done or Back. Opening the nav-bar
+Settings button returns to the tuned channel, so scrolling to the top no longer
+loses the viewing position. If a settings change hides that channel, focus falls
+back to a visible channel. Back in fullscreen still returns to the guide.
+
+**Shipped.** Debug APK installed on the test TV. Debug assembly and 104 unit tests
+pass. Changes are uncommitted on `master`; the navigation round trip still needs
+hardware verification.
+
+**Next.** Verify the settings round trip from a channel far down the guide.
+
+## 2026-10-10 (centered retro picture and station bumper)
+
+**Shipped.** StaticGroot 0.1.3 (4), debug APK installed on the Android 12 BRAVIA
+test device. No store release. Changes remain uncommitted on `master`.
+
+**Changed.** Retro video and its CRT overlay are centered in preview and fullscreen
+instead of right-aligned. A local GROOT station card occupies a scheduled 30-second
+break between programmes. It shows the channel identity, the next three programmes
+and a countdown. Bumpers are explicit schedule blocks, so joining during a break
+shows its remaining time rather than trying to play the next programme early.
+They do not make Jellyfin playback requests and are excluded from airing history.
+Natural programme end advances into the bumper before the next programme.
+
+This is an Android-specific schedule extension requested for StaticGroot. The
+underlying Swift-derived ordering remains unchanged, but airtimes now include
+station breaks. The final block of a local day is clipped at midnight; a break
+at that boundary can therefore be shorter than 30 seconds.
+
+**Verified.** Debug assembly, lint and 104 unit tests pass. Three new timing checks
+cover contiguous programme/break blocks, joining 12 seconds into a break with
+18 seconds remaining, and midnight clipping. APK installation succeeded.
+
+**Half-done.** The bumper has not been observed through a natural programme end
+on hardware. Countdown, centered picture and preview/fullscreen rendering need
+visual confirmation. Existing HLS transcode stalls remain unresolved.
+
+**Next.** Observe one complete programme-to-bumper-to-programme transition on the
+TV, then finish the HLS segment investigation.
+
+## 2026-10-10 (StaticGroot display settings)
+
+**Shipped.** StaticGroot 0.1.2 (3), debug APK installed on the Android 12 BRAVIA
+test device. No store release. Changes are uncommitted on `master`.
+
+**Changed.** Settings now exposes persistent Retro Mode and Show off-air channels
+toggles, plus playback retry, sign-out and attribution. Retro defaults to on,
+matching Swift: 4:3 crop, scanlines and a tube-edge vignette. Off fits the original
+image without the overlay. VHS tracking glitches and flicker are not yet ported.
+Off-air channels are hidden by default, based on the current schedule, and visibility
+is refreshed every 30 seconds so time-gated channels can appear when they open.
+Settings is reachable through the nav button or the remote Menu key.
+
+**Verified.** Screenshot confirmed the settings dialog on the TV and off-air rows
+hidden initially. Enabling Show off-air channels restored empty rows immediately,
+and its value was confirmed in device-local preferences. It was switched back off
+after the check. Debug assembly, 101 unit tests and lint pass. Existing HLS stalls
+remain unresolved; this update does not establish reliable transcode playback.
+
+**Next.** Verify Retro Mode visually with a playing programme and on a fullscreen
+round trip, then continue the HLS segment investigation.
+
+## 2026-10-10 (StaticGroot tuner repair)
+
+**Shipped.** StaticGroot 0.1.1 (2), a debug APK installed on an Android 12 BRAVIA
+test device through ADB. No store release. Changes are local on `master`, uncommitted.
+
+**Changed.** The sidebar prototype is replaced by the tuner layout from Swift
+`TunerView`: programme information at top left, a 4:3 preview at top right,
+and a two-hour EPG underneath with four half-hour headings, duration-sized
+programme cells, a now line and whole-row D-pad focus. Left/right scrolls time;
+OK tunes a highlighted channel, then OK on the playing channel expands fullscreen.
+Back returns to the same player. DM Mono is bundled with its OFL licence.
+
+`TunerPlayback` owns one Media3 player for guide and fullscreen, invalidates stale
+network results, stops hidden playback, resumes on foreground entry, handles natural
+programme end, and displays tuning/buffering/error states. Session cleanup runs
+separately because a measured stop request took 7.4 seconds and blocked the next tune.
+The Android profile permits H.264 MKV direct play because Media3 can demux it.
+All HLS requests carry authentication headers rather than relying on an inherited query.
+Jellyfin identifies the client as StaticGroot. Time restrictions are evaluated when
+the schedule is requested rather than frozen at the startup hour.
+
+**Measured.** Direct-file playback rendered its first frame in 4.5 seconds and
+advanced continuously through repeated five-second samples. Screenshots verified
+video in fullscreen and video after Back to the guide. The guide rendered the
+programme grid on device. Android unit tests (101), debug assembly and lint pass;
+the shared filter and schedule smoke scripts pass (53 and 12 checks).
+
+**Half-done.** HLS transcodes are not reliable. Master and child playlists loaded,
+but one fMP4 media segment returned 24 bytes after 17.8 seconds with no first frame.
+A TS-HLS zero-offset probe rendered a frame after 17.2 seconds but buffered after
+about three seconds. Neither TS nor a PlaybackInfo start offset established reliable
+scheduled playback; both experiments were reverted. The final path preserves the
+Swift-measured client seek, and a 30-second stall displays an error and stops the
+stream. Natural auto-advance is implemented but not verified through a programme end
+on hardware. Styling still lacks the original description/progress details and CRT
+effects. Existing manifest restart instability, enrichment and library caching remain.
+
+**Next.** Inspect segment production/server transcoding with a synthetic fixture;
+verify HLS seek, continuous play and natural end before calling playback complete.
+Finish the information-panel styling and verify D-pad settings navigation.
+
 ## 2026-10-10 (fork: Android TV port)
 
 **Shipped.** Nothing. No build went out, and `android/` does not exist yet.

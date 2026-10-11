@@ -1,0 +1,63 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { StationStore, createServer } = require('./schedule-service.cjs');
+const station = 'a'.repeat(64);
+const setup = { timeZone: 'UTC', channels: [{ id: 1, name: 'Films', enabled: true }] };
+const block = { itemId: 'm1', startUnix: 100, endUnix: 3700, mediaOffsetSeconds: 0,
+  isBumper: false, isMidBreak: false, movieIdentity: 'movie:1' };
+function directory(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'staticgroot-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir;
+}
+test('published times survive restart and a differing second device proposal', t => {
+  const dir = directory(t); const first = new StationStore(dir);
+  first.setup(station, setup);
+  const day = first.day(station, 1, '2026-10-10', { blocks: [block] });
+  const second = new StationStore(dir);
+  assert.deepEqual(second.day(station, 1, '2026-10-10', { blocks: [{ ...block, startUnix: 200 }] }), day);
+});
+test('adjacent movie repeats rejected, continuation and separated repeats permitted', t => {
+  const store = new StationStore(directory(t)); store.setup(station, setup);
+  assert.throws(() => store.day(station, 1, '2026-10-10', { blocks: [block,
+    { ...block, startUnix: 3700, endUnix: 7300 }] }), /repeated/);
+  assert.equal(store.day(station, 1, '2026-10-10', { blocks: [block,
+    { ...block, startUnix: 3700, endUnix: 7300, mediaOffsetSeconds: 3600 }] }).blocks.length, 2);
+});
+test('force regeneration publishes a complete new generation and preserves the previous one', t => {
+  const dir = directory(t); const store = new StationStore(dir); store.setup(station, setup);
+  store.day(station, 1, '2026-10-10', { blocks: [block] });
+  const changed = { ...block, itemId: 'm2', movieIdentity: 'movie:2' };
+  const updated = store.regenerate(station, { generation: 0, days: [
+    { channelId: 1, dayKey: '2026-10-10', blocks: [changed] }] });
+  assert.equal(updated.generation, 1);
+  assert.equal(store.day(station, 1, '2026-10-10').blocks[0].itemId, 'm2');
+  assert.ok(fs.existsSync(path.join(dir, station, '1_2026-10-10.json')));
+  assert.throws(() => store.day(station, 1, '2026-10-11', { generation: 0, blocks: [block] }), /restart/);
+});
+test('invalid regeneration cannot change the active schedule', t => {
+  const store = new StationStore(directory(t)); store.setup(station, setup);
+  store.day(station, 1, '2026-10-10', { blocks: [block] });
+  assert.throws(() => store.regenerate(station, { generation: 0, days: [
+    { channelId: 1, dayKey: '2026-10-10', blocks: [{ ...block, endUnix: 0 }] }] }));
+  assert.equal(store.setup(station).generation || 0, 0);
+  assert.equal(store.day(station, 1, '2026-10-10').blocks[0].itemId, 'm1');
+});
+test('channel setup updates are shared and version conflicts rejected', t => {
+  const store = new StationStore(directory(t)); const saved = store.setup(station, setup);
+  store.updateSetup(station, { ...saved, channels: [{ ...saved.channels[0], enabled: false }] });
+  assert.equal(store.setup(station).channels[0].enabled, false);
+  assert.throws(() => store.updateSetup(station, saved), /reload/);
+});
+test('HTTP rejects missing auth and publishes authenticated requests', async t => {
+  const token = 'synthetic-test-key-1234567890';
+  const server = createServer({ directory: directory(t), token });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/v1/stations/${station}/setup`;
+  assert.equal((await fetch(url)).status, 401);
+  const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(setup) });
+  assert.equal(response.status, 200);
+});

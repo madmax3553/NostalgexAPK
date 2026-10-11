@@ -23,8 +23,8 @@ android {
         // Placeholder floor. Set the real device floor during the port.
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 17
+        versionName = "0.1.16"
     }
 
     buildTypes {
@@ -46,6 +46,10 @@ android {
 }
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(syncChannelConfig)
+}
+
+tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
     dependsOn(syncChannelConfig)
 }
 

@@ -89,6 +89,9 @@ data class PlaybackSource(
     val SupportsDirectPlay: Boolean? = null,
     val TranscodingUrl: String? = null,
     val MediaStreams: List<MediaStream>? = null,
+    val ETag: String? = null,
+    val Size: Long? = null,
+    val RunTimeTicks: Long? = null,
 )
 
 /** The device profile sent with PlaybackInfo. Tells the server what this device can play. */
@@ -117,6 +120,7 @@ data class TranscodingProfile(
     val Context: String,
     val MaxAudioChannels: String,
     @SerialName("Protocol") val protocolName: String,
+    val MaxHeight: Int = 2160,
 )
 
 @Serializable

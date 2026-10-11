@@ -205,9 +205,16 @@ class MainActivity : Activity() {
         runOnUiThread { status.text = "Loading libraries..." }
 
         val items = ArrayList<MediaItem>()
+        val commercials = ArrayList<io.github.madmax3553.staticgroot.jellyfin.CommercialClip>()
         val sections = client.loadSections()
         Log.i(TAG, "sections=${sections.size}")
         for (section in sections) {
+            if (io.github.madmax3553.staticgroot.jellyfin.CommercialClips.isLibrary(section.title)) {
+                client.loadItems(section.id, "Movie,Video,MusicVideo").mapNotNullTo(commercials) {
+                    io.github.madmax3553.staticgroot.jellyfin.CommercialClips.fromItem(it)
+                }
+                continue
+            }
             Log.i(TAG, "section '${section.title}' collectionType=${section.collectionType} type=${section.type}")
             if (section.type == "show") {
                 val series = client.loadSeries(section.id)
@@ -229,12 +236,22 @@ class MainActivity : Activity() {
 
         runOnUiThread { status.text = "Building ${items.size} items into channels. This can take a while on a TV." }
         val t0 = System.currentTimeMillis()
-        val config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
+        var config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
+        val companion = io.github.madmax3553.staticgroot.schedule.CompanionSettings(this)
+        val shared = if (companion.url.isNotBlank()) io.github.madmax3553.staticgroot.schedule.SharedStation(
+            companion.url, companion.key, client.stationIdentity()) else null
+        var stationZone = ZoneId.systemDefault()
+        if (shared != null) {
+            runOnUiThread { status.text = "Reading shared channel setup…" }
+            val setup = shared.setup(config.channels, stationZone.id)
+            stationZone = ZoneId.of(setup.timeZone)
+            config = config.copy(channels = setup.channels.filter { it.enabled }.map { it.definition })
+        }
         val memberships = ChannelMemberships.parse(
             assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
         )
         val tParsed = System.currentTimeMillis()
-        val clock = FilterClock(System.currentTimeMillis() / 1000, ZoneId.systemDefault())
+        val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
         val channels = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
         val tBuilt = System.currentTimeMillis()
         Log.i(
@@ -243,9 +260,37 @@ class MainActivity : Activity() {
                 "parseMs=${tParsed - t0} buildMs=${tBuilt - tParsed}",
         )
 
+        AppSession.stationZone = stationZone
         AppSession.init(File(filesDir, "day_history"))
         AppSession.client = client
+        AppSession.commercials = commercials
         AppSession.channels = channels
+        AppSession.sharedStation = shared
+        AppSession.lastChannelId = null
+        if (shared != null) {
+            runOnUiThread { status.text = "Loading published programmes…" }
+            val lookup = items.associateBy { it.id }
+            val startDate = java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(stationZone).toLocalDate()
+            if (intent.getBooleanExtra("force_regenerate", false)) {
+                runOnUiThread { status.text = "Regenerating shared schedules…" }
+                val days = channels.flatMap { ch -> (0L..2L).map { offset ->
+                    val date = startDate.plusDays(offset)
+                    val start = date.atStartOfDay(stationZone).toEpochSecond()
+                    Triple(ch.id, date.toString(), AppSession.scheduler!!.dayBlocks(
+                        ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600))
+                } }
+                shared.regenerate(days)
+            }
+            for (ch in channels) for (offset in 0L..2L) {
+                val date = startDate.plusDays(offset)
+                val start = date.atStartOfDay(stationZone).toEpochSecond()
+                val proposed = AppSession.scheduler!!.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600)
+                val saved = shared.publish(ch, date.toString(), proposed, lookup)
+                AppSession.scheduler!!.installPublished(ch.id, start, saved)
+            }
+            AppSession.lastChannelId = shared.selection()
+            AppSession.scheduler!!.usePublishedOnly()
+        }
         runOnUiThread {
             startActivity(Intent(this, GuideActivity::class.java))
             finish()
