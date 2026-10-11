@@ -206,13 +206,21 @@ class MainActivity : Activity() {
             items.addAll(mapped)
         }
 
+        runOnUiThread { status.text = "Building ${items.size} items into channels. This can take a while on a TV." }
+        val t0 = System.currentTimeMillis()
         val config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
         val memberships = ChannelMemberships.parse(
             assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
         )
+        val tParsed = System.currentTimeMillis()
         val clock = FilterClock(System.currentTimeMillis() / 1000, ZoneId.systemDefault())
         val channels = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
-        Log.i(TAG, "items=${items.size} channels=${channels.size} withItems=${channels.count { it.pool.isNotEmpty() }}")
+        val tBuilt = System.currentTimeMillis()
+        Log.i(
+            TAG,
+            "items=${items.size} channels=${channels.size} withItems=${channels.count { it.pool.isNotEmpty() }} " +
+                "parseMs=${tParsed - t0} buildMs=${tBuilt - tParsed}",
+        )
 
         AppSession.init(File(filesDir, "day_history"))
         AppSession.client = client

@@ -167,11 +167,54 @@ data class FilterClock(val nowEpochSeconds: Long, val zone: ZoneId) {
     val currentYear: Int get() = now.year
 }
 
+/**
+ * An item with the facts that do not depend on the channel, computed once: its manifest claims,
+ * its exclusive lock, and the exclusive rules that block it outside their own channels.
+ */
+class PreparedItem(
+    val cache: FilterCache,
+    val claimed: List<Int>?,
+    val lock: Int?,
+    /** Indices into the exclusive rules that match this item (by title, genre, or manifest). */
+    val blockingRules: Set<Int>,
+)
+
+class PreparedPool(
+    val items: List<PreparedItem>,
+    val exclusiveRules: List<ExclusiveRule>,
+)
+
 object RuleFilter {
+
+    /** Computes the channel-independent facts once. Reuse the result across every channel. */
+    fun prepare(
+        cached: List<FilterCache>,
+        memberships: ChannelMemberships,
+        exclusiveRules: List<ExclusiveRule>,
+    ): PreparedPool {
+        val items = cached.map { c ->
+            val item = c.item
+            val tmdb = item.tmdbID
+            val mediaType = if (item.type == MediaType.EPISODE) "tv" else "movie"
+            val claimed = tmdb?.let { memberships.channels(mediaType, it) }
+            val lock = tmdb?.let { memberships.exclusive(mediaType, it) }
+            val blocking = HashSet<Int>()
+            exclusiveRules.forEachIndexed { index, rule ->
+                if (rule.matches(item)) {
+                    blocking.add(index)
+                } else if (rule.manifestExclusive && claimed != null && claimed.any { it in rule.channelIDs }) {
+                    blocking.add(index)
+                }
+            }
+            PreparedItem(c, claimed, lock, blocking)
+        }
+        return PreparedPool(items, exclusiveRules)
+    }
 
     /**
      * Port of AppState.filterItems. Returns the items that pass [rules] for [channelID].
      * [category] is the bundle category (for example "kids"). A null [rules] passes everything.
+     * Prefer [prepare] + [filterPrepared] when filtering many channels over the same items.
      */
     fun filter(
         cached: List<FilterCache>,
@@ -181,8 +224,19 @@ object RuleFilter {
         memberships: ChannelMemberships,
         exclusiveRules: List<ExclusiveRule>,
         clock: FilterClock,
+    ): List<MediaItem> = filterPrepared(
+        prepare(cached, memberships, exclusiveRules), rules, channelID, category, clock,
+    )
+
+    fun filterPrepared(
+        pool: PreparedPool,
+        rules: ChannelRules?,
+        channelID: Int,
+        category: String?,
+        clock: FilterClock,
     ): List<MediaItem> {
-        if (rules == null) return cached.map { it.item }
+        if (rules == null) return pool.items.map { it.cache.item }
+        val exclusiveRules = pool.exclusiveRules
 
         val currentYear = clock.currentYear
         val isKids = category == "kids"
@@ -226,7 +280,8 @@ object RuleFilter {
         val resolvedType = rules.resolvedType()
 
         val out = ArrayList<MediaItem>()
-        for (cache in cached) {
+        for (prepared in pool.items) {
+            val cache = prepared.cache
             if (passes(
                     cache = cache,
                     rules = rules,
@@ -241,7 +296,7 @@ object RuleFilter {
                     ),
                     resolvedSource = resolvedSource,
                     resolvedType = resolvedType,
-                    memberships = memberships,
+                    prepared = prepared,
                     exclusiveRules = exclusiveRules,
                     clock = clock,
                     currentYear = currentYear,
@@ -291,7 +346,7 @@ object RuleFilter {
         lists: Lists,
         resolvedSource: LibrarySource?,
         resolvedType: MediaType?,
-        memberships: ChannelMemberships,
+        prepared: PreparedItem,
         exclusiveRules: List<ExclusiveRule>,
         clock: FilterClock,
         currentYear: Int,
@@ -340,17 +395,13 @@ object RuleFilter {
         }
 
         // Manifest-level exclusivity: an item locked to one channel appears nowhere else.
-        val tmdbID = item.tmdbID
-        val mediaType = if (item.type == MediaType.EPISODE) "tv" else "movie"
-        if (tmdbID != null) {
-            val locked = memberships.exclusive(mediaType, tmdbID)
-            if (locked != null && locked != channelID) return false
-        }
+        val lock = prepared.lock
+        if (lock != null && lock != channelID) return false
 
         // Manifest claim for this channel: additive whitelist. Type, era, title curation,
         // title excludes and genre excludes still apply. Only genre includes are bypassed.
-        if (tmdbID != null) {
-            val claimed = memberships.channels(mediaType, tmdbID)
+        run {
+            val claimed = prepared.claimed
             if (claimed != null && channelID in claimed) {
                 resolvedType?.let { if (item.type != it) return false }
                 if (!passesYearRange(item, rules.yearRange)) return false
@@ -373,13 +424,8 @@ object RuleFilter {
         }
 
         // Channel exclusivity: content owned by another channel is skipped here.
-        for (rule in exclusiveRules) {
-            if (channelID in rule.channelIDs) continue
-            if (rule.matches(item)) return false
-            if (rule.manifestExclusive && tmdbID != null) {
-                val claimed = memberships.channels(mediaType, tmdbID)
-                if (claimed != null && claimed.any { it in rule.channelIDs }) return false
-            }
+        for (r in prepared.blockingRules) {
+            if (channelID !in exclusiveRules[r].channelIDs) return false
         }
 
         resolvedType?.let { if (item.type != it) return false }

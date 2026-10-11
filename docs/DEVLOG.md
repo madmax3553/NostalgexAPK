@@ -144,6 +144,19 @@ Commits carry the detail of *what*; this carries the *why*.
   needs a password or Quick Connect, because no session was saved before.
 - Not yet: a sign-out control, and the library reloads on each launch (no cache).
 
+- The "freeze" was real: the channel build ran at 100% CPU for several minutes on the TV
+  with no progress shown. Cause: each channel re-checked every item against the
+  exclusive rules and the membership manifest, so the work was channels times items.
+  The item-level facts are now computed once (`RuleFilter.prepare`), and channels reuse
+  them. On the TV the build of 2,655 items into 131 channels takes 2.7 s (parse 0.2 s),
+  measured from the device log. The golden cross-check still passes after the change.
+- The player and guide now log their state and errors under the StaticGroot tag
+  (`PlaybackLog.kt`). Stream URLs are not logged.
+- Known: the preview panel stayed black in the one check made, and the playback log
+  showed buffering with no error. Not yet confirmed whether video renders.
+- Known: when the saved server does not answer, resume shows the raw timeout and offers
+  no retry. The fix is a retry button and a clearer message.
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.

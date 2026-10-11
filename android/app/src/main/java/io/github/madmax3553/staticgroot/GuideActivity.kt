@@ -15,7 +15,10 @@ import android.widget.BaseAdapter
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import android.util.Log
 import androidx.media3.ui.PlayerView
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
 import io.github.madmax3553.staticgroot.schedule.ChannelSchedule
@@ -177,6 +180,7 @@ class GuideActivity : Activity() {
                     if (resolution == null) return@post
                     player?.release()
                     val p = ExoPlayer.Builder(this).build()
+                    p.logStateAndErrors("StaticGroot")
                     player = p
                     preview.player = p
                     p.volume = 0f

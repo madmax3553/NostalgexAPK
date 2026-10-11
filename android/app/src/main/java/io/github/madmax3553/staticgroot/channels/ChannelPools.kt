@@ -26,15 +26,16 @@ object ChannelPools {
         clock: FilterClock,
     ): List<ChannelRuntime> {
         val cached = items.map { buildFilterCache(it, enrichment[it.id]) }
+        // Item-level facts (manifest claims, locks, exclusive hits) are computed once here,
+        // not once per channel.
+        val prepared = RuleFilter.prepare(cached, memberships, config.exclusiveRules)
         val hour = clock.now.hour
         return config.channels.map { ch ->
-            val matched = RuleFilter.filter(
-                cached = cached,
+            val matched = RuleFilter.filterPrepared(
+                pool = prepared,
                 rules = ch.rules,
                 channelID = ch.id,
                 category = ch.category,
-                memberships = memberships,
-                exclusiveRules = config.exclusiveRules,
                 clock = clock,
             )
             ChannelRuntime(ch, filteredPool(matched, ch.timeRestrictions, hour))

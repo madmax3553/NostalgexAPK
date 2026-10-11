@@ -69,19 +69,19 @@ class FilterGoldenTest {
         val memberships = ChannelMemberships.parse(File("../../channels-memberships.json").readText())
         val clock = FilterClock(nowEpochSeconds = fixture.long("nowSec")!!, zone = ZoneOffset.UTC)
         val cached = items.map { buildFilterCache(it, enrichment = null) }
+        // Same path the app takes: prepare once, then filter every channel.
+        val prepared = RuleFilter.prepare(cached, memberships, config.exclusiveRules)
 
         val expected = fixture["channels"]!!.jsonObject
         assertEquals("channel count", config.channels.size, expected.size)
 
         val mismatches = ArrayList<String>()
         for (ch in config.channels) {
-            val got = RuleFilter.filter(
-                cached = cached,
+            val got = RuleFilter.filterPrepared(
+                pool = prepared,
                 rules = ch.rules,
                 channelID = ch.id,
                 category = ch.category,
-                memberships = memberships,
-                exclusiveRules = config.exclusiveRules,
                 clock = clock,
             ).map { it.id }
             val want = expected[ch.id.toString()]!!.jsonArray.map { it.jsonPrimitive.content }

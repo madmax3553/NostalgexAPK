@@ -7,7 +7,10 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import android.util.Log
 import androidx.media3.ui.PlayerView
 
 /*
@@ -56,6 +59,7 @@ class PlayerActivity : Activity() {
                         label.text = "The server offered no playable stream for ${np.item.title}"
                     } else {
                         val p = ExoPlayer.Builder(this).build()
+                        p.logStateAndErrors("StaticGroot")
                         player = p
                         playerView.player = p
                         p.setMediaItem(ExoMediaItem.fromUri(resolution.url))
