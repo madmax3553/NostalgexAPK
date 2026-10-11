@@ -1,18 +1,15 @@
 package io.github.madmax3553.staticgroot
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.TextView
 import io.github.madmax3553.staticgroot.channels.ChannelConfigLoader
 import io.github.madmax3553.staticgroot.channels.ChannelMemberships
@@ -22,41 +19,48 @@ import io.github.madmax3553.staticgroot.channels.MediaItem
 import io.github.madmax3553.staticgroot.jellyfin.AuthResult
 import io.github.madmax3553.staticgroot.jellyfin.HttpUrlJellyfinHttp
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinException
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinItem
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinMapping
 import java.io.File
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 /*
- * Sign-in (password or Quick Connect), then the music-video channel list. Plain views, so
- * the whole screen works with a D-pad. Not the final Leanback UI.
+ * Launch screen. With a saved session it loads the library and opens the guide, with no sign-in.
+ * Without one, or when the server rejects the saved token, it shows sign-in (password or Quick
+ * Connect). Plain views, not the final Leanback UI.
  */
 class MainActivity : Activity() {
 
     private val http = HttpUrlJellyfinHttp()
+    private lateinit var store: SessionStore
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     @Volatile private var quickConnectCancelled = false
 
-    private fun prefs() = getSharedPreferences("staticgroot", MODE_PRIVATE)
-
     private val deviceId: String by lazy {
-        prefs().getString("device_id", null) ?: UUID.randomUUID().toString().also {
-            prefs().edit().putString("device_id", it).apply()
+        val prefs = getSharedPreferences("staticgroot", MODE_PRIVATE)
+        prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString("device_id", it).apply()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        store = SessionStore(this)
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(48), dp(48), dp(48), dp(48))
             gravity = Gravity.TOP
         }
         setContentView(root)
-        showSignIn()
+        status = TextView(this).apply { textSize = 18f }
+
+        val saved = store.load()
+        if (saved != null) resume(saved) else showSignIn(null)
     }
 
     override fun onDestroy() {
@@ -64,15 +68,41 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun showSignIn() {
+    // MARK: - Resume with the saved session
+
+    private fun resume(saved: SessionStore.Saved) {
+        root.removeAllViews()
+        root.addView(title("StaticGroot"))
+        status = TextView(this).apply { textSize = 18f; text = "Loading your library..." }
+        root.addView(status)
+        Thread {
+            try {
+                val client = JellyfinClient(saved.serverUrl, http, deviceId, saved.accessToken, saved.userId)
+                loadLibrary(client)
+            } catch (e: JellyfinException) {
+                if (e.status == 401 || e.status == 403) {
+                    store.clearSession()
+                    runOnUiThread { showSignIn("Your session has ended. Please sign in again.") }
+                } else {
+                    fail(e)
+                }
+            } catch (e: Exception) {
+                fail(e)
+            }
+        }.start()
+    }
+
+    // MARK: - Sign-in screen
+
+    private fun showSignIn(message: String?) {
         root.removeAllViews()
         root.addView(title("Sign in to Jellyfin"))
         val server = field("Server address, e.g. http://jellyfin.example:8096").apply {
-            setText(prefs().getString(KEY_SERVER_URL, "").orEmpty())
+            setText(store.lastServerUrl())
         }
         val user = field("Username")
         val password = field("Password", secret = true)
-        status = TextView(this).apply { textSize = 18f; setPadding(0, dp(12), 0, 0) }
+        status = TextView(this).apply { textSize = 18f; setPadding(0, dp(12), 0, 0); text = message.orEmpty() }
         root.addView(server)
         root.addView(user)
         root.addView(password)
@@ -105,13 +135,13 @@ class MainActivity : Activity() {
     private fun passwordSignIn(url: String, name: String, pass: String) {
         try {
             val auth = JellyfinClient.authenticate(url, name, pass, http, deviceId)
-            loadLibrary(url, auth)
+            completeSignIn(url, auth)
         } catch (e: Exception) {
             fail(e)
         }
     }
 
-    /** Shows the code, polls until the user approves it, then loads the library. */
+    /** Shows the code, polls until the user approves it, then signs in. */
     private fun quickConnect(url: String) {
         try {
             quickConnectCancelled = false
@@ -124,7 +154,7 @@ class MainActivity : Activity() {
                 Thread.sleep(QUICK_CONNECT_POLL_MS)
                 if (JellyfinClient.quickConnectCheck(url, http, deviceId, start.secret)) {
                     val auth = JellyfinClient.quickConnectAuthenticate(url, http, deviceId, start.secret)
-                    loadLibrary(url, auth)
+                    completeSignIn(url, auth)
                     return
                 }
             }
@@ -136,19 +166,24 @@ class MainActivity : Activity() {
         }
     }
 
-    /**
-     * Loads every library, the movies and the TV episodes, and builds the pools for all channels.
-     * Logs what each library holds under the tag "StaticGroot", so an empty result can be
-     * traced to the server's item types.
-     */
-    private fun loadLibrary(url: String, auth: AuthResult) {
+    /** Saves the session (encrypted), then loads the library and opens the guide. */
+    private fun completeSignIn(url: String, auth: AuthResult) {
         val client = JellyfinClient(url, http, deviceId, auth.accessToken, auth.userId)
-        // Remember the address (never the token) so the next sign-in starts pre-filled.
-        prefs().edit().putString(KEY_SERVER_URL, client.serverUrl).apply()
+        store.save(client.serverUrl, auth.accessToken, auth.userId)
+        loadLibrary(client)
+    }
+
+    // MARK: - Library
+
+    /**
+     * Loads every library, the movies and the TV episodes, and builds the pools for all channels,
+     * then opens the guide. Logs what each library holds under the tag "StaticGroot", so an empty
+     * result can be traced to the server's item types.
+     */
+    private fun loadLibrary(client: JellyfinClient) {
         runOnUiThread { status.text = "Loading libraries..." }
 
         val items = ArrayList<MediaItem>()
-        val summary = ArrayList<String>()
         val sections = client.loadSections()
         Log.i(TAG, "sections=${sections.size}")
         for (section in sections) {
@@ -158,7 +193,6 @@ class MainActivity : Activity() {
                 val episodes = loadEpisodesConcurrently(client, series)
                 items.addAll(episodes)
                 Log.i(TAG, "  series=${series.size} episodes loaded=${episodes.size}")
-                summary.add("${section.title}: ${series.size} series, ${episodes.size} episodes")
                 continue
             }
             val isMusic = section.type == "musicvideo"
@@ -170,7 +204,6 @@ class MainActivity : Activity() {
             val mapped = raw.mapNotNull { JellyfinMapping.toMediaItem(it, isMusicSection = isMusic) }
             Log.i(TAG, "  loaded raw=${raw.size} mapped=${mapped.size} (no runtime dropped: ${raw.size - mapped.size})")
             items.addAll(mapped)
-            summary.add("${section.title}: $movieCount movies, $musicVideoCount music videos, ${mapped.size} loaded")
         }
 
         val config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
@@ -179,13 +212,15 @@ class MainActivity : Activity() {
         )
         val clock = FilterClock(System.currentTimeMillis() / 1000, ZoneId.systemDefault())
         val channels = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
-        val withItems = channels.count { it.pool.isNotEmpty() }
-        Log.i(TAG, "items=${items.size} channels=${channels.size} withItems=$withItems")
+        Log.i(TAG, "items=${items.size} channels=${channels.size} withItems=${channels.count { it.pool.isNotEmpty() }}")
 
         AppSession.init(File(filesDir, "day_history"))
         AppSession.client = client
         AppSession.channels = channels
-        runOnUiThread { showSummary(items.size, withItems, channels.size, summary) }
+        runOnUiThread {
+            startActivity(Intent(this, GuideActivity::class.java))
+            finish()
+        }
     }
 
     /** Episodes for many series at once. Six requests in flight, as a simple cap. */
@@ -198,32 +233,11 @@ class MainActivity : Activity() {
                 }
             }
             return futures.flatMap { it.get() }
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
         } finally {
             pool.shutdownNow()
         }
-    }
-
-    private fun showSummary(loaded: Int, withItems: Int, total: Int, summary: List<String>) {
-        root.removeAllViews()
-        root.addView(title("Libraries loaded"))
-        root.addView(TextView(this).apply {
-            textSize = 18f
-            text = "$loaded items. $withItems of $total channels have programming."
-            setPadding(0, 0, 0, dp(8))
-        })
-        root.addView(TextView(this).apply {
-            textSize = 14f
-            text = summary.joinToString("\n").ifEmpty { "The server has no libraries for this user." }
-            setPadding(0, 0, 0, dp(16))
-        })
-        root.addView(Button(this).apply {
-            text = "Open guide"
-            setOnClickListener {
-                startActivity(android.content.Intent(this@MainActivity, GuideActivity::class.java))
-            }
-        })
-        status = TextView(this).apply { textSize = 16f }
-        root.addView(status)
     }
 
     private fun fail(e: Exception) {
@@ -255,6 +269,5 @@ class MainActivity : Activity() {
         private const val QUICK_CONNECT_POLL_MS = 2_000L
         private const val QUICK_CONNECT_TIMEOUT_MS = 5 * 60_000L
         private const val EPISODE_FETCH_THREADS = 6
-        private const val KEY_SERVER_URL = "server_url"
     }
 }

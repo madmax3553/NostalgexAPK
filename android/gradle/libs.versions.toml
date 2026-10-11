@@ -6,6 +6,7 @@ leanback = "1.0.0"
 junit = "4.13.2"
 kotlinxSerialization = "1.7.3"
 media3 = "1.4.1"
+securityCrypto = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -13,6 +14,7 @@ androidx-leanback = { group = "androidx.leanback", name = "leanback", version.re
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls", version.ref = "media3" }
+security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 

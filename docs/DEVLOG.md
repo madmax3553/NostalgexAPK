@@ -133,6 +133,17 @@ Commits carry the detail of *what*; this carries the *why*.
 - 95 unit tests pass. Not verified: the lineup against tvOS, the preview and player
   on the TV, the seek accuracy, and the episode load time on a large library.
 
+- Fixed on device: "Open guide" opened the Jellyfin app. `GuideActivity` was not
+  declared in the manifest, so starting it crashed StaticGroot, and the launcher
+  showed the previous app. It is declared now.
+- The Jellyfin session (server address, access token, user id) is saved in
+  EncryptedSharedPreferences, with the key in the Android Keystore
+  (`SessionStore`). It is not in the repo or in plain storage. Launch resumes into the
+  guide with no sign-in. A 401 or 403 from the server clears the token and shows
+  sign-in again, with the address filled in. The first sign-in after this build still
+  needs a password or Quick Connect, because no session was saved before.
+- Not yet: a sign-out control, and the library reloads on each launch (no cache).
+
 **Half-done.** The daily schedule (`DailyManifestScheduler`, `SchedulePoolOrdering`),
 enrichment (TMDB and OMDb), the guide and the Leanback UI are not ported. No APK has
 been installed on a device or emulator. The Android app is not released.
