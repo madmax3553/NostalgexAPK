@@ -84,12 +84,33 @@ class MainActivity : Activity() {
                     store.clearSession()
                     runOnUiThread { showSignIn("Your session has ended. Please sign in again.") }
                 } else {
-                    fail(e)
+                    runOnUiThread { showRetry(saved, e.message) }
                 }
             } catch (e: Exception) {
-                fail(e)
+                runOnUiThread { showRetry(saved, e.message) }
             }
         }.start()
+    }
+
+    /** The server did not answer. Offer a retry, or sign-in, rather than a dead end. */
+    private fun showRetry(saved: SessionStore.Saved, reason: String?) {
+        root.removeAllViews()
+        root.addView(title("StaticGroot"))
+        root.addView(TextView(this).apply {
+            textSize = 18f
+            text = "Could not reach your Jellyfin server at ${saved.serverUrl}.\n${reason.orEmpty()}"
+            setPadding(0, 0, 0, dp(16))
+        })
+        root.addView(Button(this).apply {
+            text = "Retry"
+            setOnClickListener { resume(saved) }
+        })
+        root.addView(Button(this).apply {
+            text = "Sign in again"
+            setOnClickListener { showSignIn(null) }
+        })
+        status = TextView(this).apply { textSize = 16f }
+        root.addView(status)
     }
 
     // MARK: - Sign-in screen
