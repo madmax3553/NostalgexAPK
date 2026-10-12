@@ -1,8 +1,6 @@
 package io.github.madmax3553.staticgroot.schedule
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import io.github.madmax3553.staticgroot.channels.ChannelDefinition
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
 import io.github.madmax3553.staticgroot.channels.MediaItem
@@ -17,10 +15,7 @@ import io.github.madmax3553.staticgroot.jellyfin.PlaybackObservation
 
 /** Companion URL and key are device-local, not bundled in the APK. */
 class CompanionSettings(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create("staticgroot_companion",
-        MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC), context,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+    private val prefs = io.github.madmax3553.staticgroot.SecurePrefs.open(context, "staticgroot_companion")
     val url get() = prefs.getString("url", "").orEmpty()
     val key get() = prefs.getString("key", "").orEmpty()
     fun save(url: String, key: String) {

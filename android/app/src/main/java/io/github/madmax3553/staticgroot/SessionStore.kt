@@ -2,8 +2,6 @@ package io.github.madmax3553.staticgroot
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 
 /**
  * The saved Jellyfin session: server address, access token and user id. Stored in
@@ -14,13 +12,8 @@ class SessionStore(context: Context) {
 
     data class Saved(val serverUrl: String, val accessToken: String, val userId: String)
 
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        FILE,
-        MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
-        context,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+    /** A Keystore fault gives an empty store, not a crash. See [SecurePrefs]. */
+    private val prefs: SharedPreferences = SecurePrefs.open(context, FILE)
 
     /** Last server address used. Kept even after sign-out, so the field can be pre-filled. */
     fun lastServerUrl(): String = prefs.getString(KEY_SERVER, "").orEmpty()

@@ -94,6 +94,31 @@ then aligns the next showing to the quarter-hour.
 
 ## API
 
+All requests require `Authorization: Bearer <service-key>`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/stations/{station}/setup` | Create setup if absent; otherwise read saved setup |
+| `GET /v1/stations/{station}/setup` | Read definitions, enabled flags, version and time zone |
+| `PUT /v1/stations/{station}/setup` | Update enabled flags using current version; stale version gets 409 |
+| `POST /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Publish complete blocks if absent; otherwise return published blocks |
+| `GET /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Read a published day |
+| `POST /v1/stations/{station}/selection` | Store last channel |
+| `GET /v1/stations/{station}/selection` | Read last channel |
+| `POST /v1/stations/{station}/regenerate` | Atomically publish a complete replacement generation |
+| `POST /v1/stations/{station}/catalog` | Upload the item to series map used by the overlap audit |
+| `GET /v1/stations/{station}/playback?itemId=&source=&device=` | Read a playback profile |
+| `POST /v1/stations/{station}/playback` | Record a playback observation |
+
+Station IDs are SHA-256 of the Jellyfin server ID and user ID. They are not secrets;
+the service key controls access. The service never receives the Jellyfin login token.
+
+Tests use synthetic data:
+
+```sh
+node --test server/schedule-service.test.cjs
+```
+
 ## Playback profiles
 
 ### Channel overlap audit
@@ -122,25 +147,3 @@ library background probe yet. Sources without ETag are not treated as reusable.
 
 `GET /v1/stations/{station}/playback?itemId=...&source=...&device=...` retrieves a
 profile. `POST` to the same path records an observation. Both require authentication.
-
-All requests require `Authorization: Bearer <service-key>`.
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /v1/stations/{station}/setup` | Create setup if absent; otherwise read saved setup |
-| `GET /v1/stations/{station}/setup` | Read definitions, enabled flags, version and time zone |
-| `PUT /v1/stations/{station}/setup` | Update enabled flags using current version; stale version gets 409 |
-| `POST /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Publish complete blocks if absent; otherwise return published blocks |
-| `GET /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Read a published day |
-| `POST /v1/stations/{station}/selection` | Store last channel |
-| `GET /v1/stations/{station}/selection` | Read last channel |
-| `POST /v1/stations/{station}/regenerate` | Atomically publish a complete replacement generation |
-
-Station IDs are SHA-256 of the Jellyfin server ID and user ID. They are not secrets;
-the service key controls access. The service never receives the Jellyfin login token.
-
-Tests use synthetic data:
-
-```sh
-node --test server/schedule-service.test.cjs
-```

@@ -3,6 +3,99 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-11 (enrichment, music genres, multi-part movies)
+
+**Shipped.** Nothing. StaticGroot 0.1.21 (22) builds and passes tests but has not
+been installed on a TV, and no TMDB or OMDb key was available, so the enrichment
+and music-lookup network paths have never run against the real services.
+
+**Changed.**
+- Rule filter enrichment was never wired in. `MainActivity` called `buildAll`
+  with no enrichment, and the lookup was keyed by Jellyfin item id where tvOS
+  keys by TMDB id (episodes share their show's record). Every keyword, network,
+  production-company and OMDb rule therefore matched nothing. Now ported from
+  tvOS `EnrichmentService`/`TMDBService`/`OMDBService` into `enrichment/`, keyed
+  by TMDB id, with an IMDb id on `MediaItem` for the OMDb lookup.
+- Static count from `channels.json`: 6 of 131 channels cannot fill without
+  enrichment (BIOPICS, FOREIGN FILMS, MIDNIGHT, CULT CLASSICS, TOON TOWN, SPY
+  GAMES), 3 more are keyword-gated, and 35 take enrichment as an extra OR
+  criterion. The other 87 do not depend on it. Earlier estimates that counted
+  `studios` overstated this: that field is native Jellyfin data.
+- No Supabase layer. A JSON cache in app storage stands in for it, keyed by TMDB
+  id. Two differences from tvOS follow from that: a 90 second budget per launch
+  (the remainder is picked up on later launches, saved every 250 titles), and
+  OMDb is not re-asked for 30 days about a title it already answered, so titles
+  with no rating do not spend the free daily quota on every launch.
+- Keys come from `local.properties` or the `TMDB_API_KEY` and `OMDB_API_KEY`
+  environment variables into `BuildConfig`. Empty means skip, as on tvOS. A key
+  compiled into an APK can be read back out of it, same as tvOS Info.plist.
+- Music videos: ported `MusicTitleParser` and `MusicYear` so title and artist are
+  split from ripped filenames, and the guide, info panel, up-next and coming-next
+  show "Artist · Song".
+- MusicBrainz and Deezer ported (`MusicBrainzClient`, `DeezerClient`,
+  `MusicEnrichmentService`), with the tag and genre vocabulary maps and the 1 per
+  second and 4 per second spacing tvOS uses. At about 2 MusicBrainz requests per
+  video a large library takes tens of minutes, so the pass runs on one background
+  thread after the guide opens (tvOS also defers it past tune-in), saves every 25
+  rows, and its results are applied on the next launch. Cached rows are applied
+  to items before the pools build, so genre and decade channels fill from them.
+  Differences from tvOS: a lookup that fails (as opposed to finding nothing)
+  caches no row, where tvOS pins a degraded row for 90 days, and five failures in
+  a row end the pass; Deezer's checked stamp is set only when Deezer answered.
+- A music library is asked for `MusicVideo` items as well as `Movie` only when the
+  server reports at least one. tvOS requests `Movie` only, so this is not parity:
+  an earlier note here called it a gap, and that was an inference. With none
+  present the request is identical to tvOS. Unmeasured on a real server.
+- Multi-part movies: ported `MultiPartStack`. A movie whose sources all carry
+  distinct part markers is scheduled at the summed runtime and plays disc to
+  disc. A tune-in offset is mapped into the right disc, and the mid-break check
+  adds the disc's start so a second disc is not read as a position near zero.
+  Other multi-source items now play the highest-bitrate source (tvOS
+  `bestMediaSource`) instead of whichever came first. Single-source items send
+  the same PlaybackInfo request as before.
+- Back in the guide now goes to the playing channel, then leaves the app (tvOS
+  `GuideExitAction`). It used to open Settings every time, so Home was the only
+  way out. Settings stays on Menu and the button above the first row.
+- A Keystore failure no longer crashes the app. `SessionStore` and the companion
+  settings go through `SecurePrefs`, which clears an unreadable file and, if the
+  master key itself is bad, recreates it. Result is a sign-in, not a crash loop.
+- Removed `PlaybackLog.kt`: unused, and it logged exception text that can carry
+  token-bearing URLs.
+- CI gets `android-unit-tests` and `server-tests` jobs. Docs: `server/README.md`
+  had an empty API heading and an incomplete endpoint table; `build.gradle` is
+  `build.gradle.kts` in CLAUDE.md and the README.
+
+**Verified.** 198 Android unit tests (was 126) and 14 server tests pass. Debug
+assembly and lint pass. `nostalgex-filter-smoke.mjs` 53 of 53 and
+`nostalgex-schedule-order-smoke.mjs` 12 of 12. New tests carry the tvOS cases for
+the music parser, year rules, `MultiPartStack` and `GuideExitAction` as written.
+Gradle needs JDK 17: with the machine default (JDK 27) it fails with just "27".
+
+**Not verified.**
+- Real-library effect of enrichment. Debug builds log
+  `ENRICHMENT delta: channelsWithItems +N, channelsWithDifferentPool=M` after the
+  first keyed launch. That is the measurement to take; no number exists yet.
+- TMDB and OMDb live behaviour, including how many launches a large library
+  needs to finish, and whether the 90 second budget is right on a TV.
+- Swift tests were not run (no macOS here). The Swift side is unchanged.
+- Multi-part playback on a real stacked movie, and the CI workflow itself.
+- Parity deviation: on tvOS the Jellyfin music path reads the filename year from
+  the already-cleaned title, which has lost it. Android reads the raw name, so a
+  "(1988)" suffix now wins as the Swift tests describe. Not confirmed against
+  Swift on the same input.
+
+**Half-done.** The music pass has no live run: how long it takes, how many of a
+real library it names, and what share of titles end with a useful genre are all
+unmeasured (tvOS measured 47 of 60 resolved by Deezer on one library). Its
+results show up one launch late by design. Version picking is automatic only.
+Bundles, Emby and Plex are not started.
+
+**Next.** Run a debug build with keys against a real library and record the
+enrichment delta line and the `MUSIC done` line here. A person needs to supply
+TMDB and OMDb keys and decide whether the Android privacy text should mention
+that titles and artist names go to TMDB, OMDb, MusicBrainz and Deezer before a
+public build.
+
 ## 2026-10-11 (session checkpoint)
 
 **Changed.** Committing the work through StaticGroot 0.1.20 (21): left-aligned

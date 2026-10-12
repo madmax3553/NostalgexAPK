@@ -222,6 +222,24 @@ class JellyfinClientTest {
     }
 
     @Test
+    fun playbackInfoNamesTheChosenSourceAndStreamsThatSource() {
+        val route = """{"MediaSources":[{"Id":"a","SupportsDirectPlay":true},{"Id":"b","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""
+        val http = FakeHttp(mapOf("/PlaybackInfo" to route))
+        val client = JellyfinClient(serverUrl, http, deviceId, "tok", "u1")
+        val r = client.resolvePlayback("item1", mediaSourceId = "b")!!
+        assertTrue(http.calls.single().body!!.contains("\"MediaSourceId\":\"b\""))
+        assertTrue("direct play must stream the chosen file", r.url.contains("MediaSourceId=b"))
+    }
+
+    @Test
+    fun singleFilePlaybackInfoBodyIsUnchangedByMultiPartSupport() {
+        val http = FakeHttp(mapOf("/PlaybackInfo" to """{"MediaSources":[{"Id":"m","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""))
+        JellyfinClient(serverUrl, http, deviceId, "tok", "u1").resolvePlayback("item1")
+        // Same as before this change: the field is present and null, so the server chooses.
+        assertTrue(http.calls.single().body!!.contains("\"MediaSourceId\":null"))
+    }
+
+    @Test
     fun everyPlaybackRequestCanAuthenticateWithoutInheritedQueryParameters() {
         val client = JellyfinClient(serverUrl, FakeHttp(emptyMap()), deviceId, "tok", "u1")
         assertEquals("tok", client.playbackHeaders()["X-Emby-Token"])

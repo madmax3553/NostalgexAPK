@@ -35,6 +35,8 @@ data class MediaItem(
     /** "S01E04" for episodes. Null for movies and music videos. */
     val seTag: String? = null,
     val year: Int? = null,
+    /** A music video's "(YYYY)" filename suffix. It beats every other year source. See [MusicYear]. */
+    val titleYear: Int? = null,
     /** YYYY-MM-DD from the server. More precise than [year] when present. */
     val originallyAvailableAt: String? = null,
     val contentRating: String? = null,
@@ -49,7 +51,15 @@ data class MediaItem(
     val addedAt: Long = 0,
     val studio: String? = null,
     val tmdbID: String? = null,
+    val imdbID: String? = null,
     val librarySource: LibrarySource? = null,
     val summary: String = "",
     val seriesId: String? = null,
+    /**
+     * The server file to play. Set only when the item has more than one source, so single-file
+     * items ask the server exactly what they always did. tvOS keeps this in `partKey`.
+     */
+    val mediaSourceId: String? = null,
+    /** The files of a disc-stacked movie, in order. Empty for everything else. */
+    val parts: List<MediaPart> = emptyList(),
 )

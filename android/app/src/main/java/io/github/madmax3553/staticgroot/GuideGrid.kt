@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.os.SystemClock
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
+import io.github.madmax3553.staticgroot.channels.displayTitle
 import io.github.madmax3553.staticgroot.schedule.ChannelSchedule
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -162,7 +163,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
                 val right = column + ((minOf(to, entry.endUnix) - from) / 7200f) * programmeWidth
                 paint.color = Color.rgb(55, 55, 70)
                 canvas.drawRect(right - scale, top, right, bottom, paint)
-                clippedText(canvas, if (entry.block.isBumper) "STATION BREAK" else entry.item.title, left + 16 * scale, top + rowHeight * .43f,
+                clippedText(canvas, if (entry.block.isBumper) "STATION BREAK" else entry.item.displayTitle, left + 16 * scale, top + rowHeight * .43f,
                     right - left - 28 * scale, 24 * scale, Color.WHITE, font)
                 val metadata = entry.item.seTag ?: entry.item.year?.toString().orEmpty()
                 clippedText(canvas, metadata, left + 16 * scale, top + rowHeight * .76f,

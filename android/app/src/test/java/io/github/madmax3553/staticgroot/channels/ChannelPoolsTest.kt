@@ -65,4 +65,49 @@ class ChannelPoolsTest {
         val show = JellyfinItem(Id = "s", Name = "S")
         assertEquals(null, JellyfinMapping.toEpisode(JellyfinItem(Id = "e", Name = "E"), show))
     }
+
+    // -- Enrichment, keyed by TMDB id as on tvOS ---------------------------------------
+
+    private fun poolIds(pools: List<ChannelRuntime>, channelId: Int) =
+        pools.first { it.id == channelId }.pool.map { it.id }
+
+    @Test
+    fun keywordChannelFillsOnlyWhenEnrichmentArrivesKeyedByTmdbId() {
+        val film = MediaItem(id = "jf-item-1", title = "Some Film", type = MediaType.MOVIE, duration = 100,
+            genres = listOf("Drama"), year = 1990, contentRating = "PG", tmdbID = "555")
+        // BIOPICS (201) matches on keywords alone.
+        assertEquals(emptyList<String>(), poolIds(ChannelPools.buildAll(config, listOf(film), clock = clock), 201))
+
+        val byTmdb = mapOf("555" to MediaEnrichment(keywords = listOf("biopic")))
+        assertEquals(listOf("jf-item-1"), poolIds(ChannelPools.buildAll(config, listOf(film), enrichment = byTmdb, clock = clock), 201))
+
+        // Keyed by the server's item id, as the old lookup did, finds nothing.
+        val byItemId = mapOf("jf-item-1" to MediaEnrichment(keywords = listOf("biopic")))
+        assertEquals(emptyList<String>(), poolIds(ChannelPools.buildAll(config, listOf(film), enrichment = byItemId, clock = clock), 201))
+    }
+
+    @Test
+    fun omdbGatedChannelNeedsRatingAndVotes() {
+        val film = MediaItem(id = "f", title = "Foreign Thing", type = MediaType.MOVIE, duration = 100,
+            genres = listOf("Drama"), year = 1990, contentRating = "R", tmdbID = "9")
+        val kw = listOf("world cinema")
+        // FOREIGN FILMS (212): keyword plus imdbRatingMin 6.5 and imdbVotesMin 5000.
+        fun run(e: MediaEnrichment) = poolIds(ChannelPools.buildAll(config, listOf(film), enrichment = mapOf("9" to e), clock = clock), 212)
+        assertEquals(listOf("f"), run(MediaEnrichment(keywords = kw, imdbRating = 7.0, imdbVotes = 6000)))
+        assertEquals(emptyList<String>(), run(MediaEnrichment(keywords = kw, imdbRating = 7.0, imdbVotes = 100)))
+        assertEquals(emptyList<String>(), run(MediaEnrichment(keywords = kw)))
+    }
+
+    @Test
+    fun episodesOfAShowAllSeeTheShowsEnrichment() {
+        val show = JellyfinItem(Id = "s", Name = "Sample Show", Genres = listOf("Comedy"),
+            ProviderIds = mapOf("Tmdb" to "77", "Imdb" to "tt77"))
+        val eps = (1..2).mapNotNull {
+            JellyfinMapping.toEpisode(JellyfinItem(Id = "e$it", Name = "E$it", RunTimeTicks = 22 * JellyfinMapping.TICKS_PER_MINUTE,
+                ParentIndexNumber = 1, IndexNumber = it), show)
+        }
+        assertEquals(listOf("tt77", "tt77"), eps.map { it.imdbID })
+        val e = mapOf("77" to MediaEnrichment(keywords = listOf("x")))
+        assertEquals(2, eps.count { e.forItem(it) != null })
+    }
 }

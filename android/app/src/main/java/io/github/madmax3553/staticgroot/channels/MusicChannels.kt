@@ -26,7 +26,7 @@ object MusicChannels {
         memberships: ChannelMemberships = ChannelMemberships.EMPTY,
         clock: FilterClock,
     ): List<ChannelPool> {
-        val cached = items.map { buildFilterCache(it, enrichment[it.id]) }
+        val cached = items.map { buildFilterCache(it, enrichment.forItem(it)) }
         return config.channels
             .filter(::isMusicChannel)
             .map { ch ->

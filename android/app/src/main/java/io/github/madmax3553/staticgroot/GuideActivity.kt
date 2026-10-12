@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.*
 import androidx.media3.ui.PlayerView
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
+import io.github.madmax3553.staticgroot.channels.displayTitle
 import io.github.madmax3553.staticgroot.schedule.ChannelSchedule
 import java.util.concurrent.Executors
 import android.text.SpannableStringBuilder
@@ -206,7 +207,7 @@ class GuideActivity : Activity() {
             text.setSpan(RelativeSizeSpan(scale), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         section("CH ${ch.number.toString().padStart(2, '0')}  ${ch.name}\n\n", colour)
-        section((item?.title ?: "OFF AIR") + "\n", Color.WHITE, 1.35f)
+        section((item?.displayTitle ?: "OFF AIR") + "\n", Color.WHITE, 1.35f)
         val episode = listOfNotNull(item?.seTag, item?.episodeTitle).joinToString("  ")
         if (episode.isNotEmpty()) section("$episode\n", Color.LTGRAY, .85f)
         item?.let {
@@ -227,7 +228,7 @@ class GuideActivity : Activity() {
                 (block.endUnix - block.startUnix).coerceAtLeast(1)).toInt().coerceIn(0, 1000)
         } else programmeProgress.progress = 0
         scheduled?.entries?.filter { !it.block.isBumper && it.startUnix > now }?.take(2)?.forEachIndexed { i, next ->
-            section("\n${if (i == 0) "UP NEXT" else "LATER"}  ${format.format(Date(next.startUnix * 1000))}  ${next.item.title}",
+            section("\n${if (i == 0) "UP NEXT" else "LATER"}  ${format.format(Date(next.startUnix * 1000))}  ${next.item.displayTitle}",
                 Color.LTGRAY, .8f)
         }
         description.text = text
@@ -280,8 +281,13 @@ class GuideActivity : Activity() {
         if (event.action == KeyEvent.ACTION_DOWN && ::playback.isInitialized) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_BACK -> {
-                    if (fullscreen) setFullscreen(false) else showSettings(focused?.id)
-                    return true
+                    if (fullscreen) { setFullscreen(false); return true }
+                    // Settings stays on Menu and the button above the first row. Back is for
+                    // going home, then out, as on tvOS (GuideExitAction).
+                    return when (GuideExitAction.decide(playback.channel?.id, focused?.id)) {
+                        is GuideExitAction.JumpToLiveChannel -> { returnToPlayingChannel(); true }
+                        GuideExitAction.LetSystemHandle -> super.dispatchKeyEvent(event)
+                    }
                 }
                 KeyEvent.KEYCODE_MENU -> { showSettings(focused?.id); return true }
                 KeyEvent.KEYCODE_LAST_CHANNEL -> { returnToPreviousChannel(); return true }

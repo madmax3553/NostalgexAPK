@@ -135,10 +135,10 @@ class JellyfinClient(
      * Playback URL for an item. Mirrors tvOS JellyfinPlaybackResolver: the server's transcode
      * URL wins, then a static direct-play stream. Returns null when neither exists.
      */
-    fun resolvePlayback(itemId: String): PlaybackResolution? {
+    fun resolvePlayback(itemId: String, mediaSourceId: String? = null): PlaybackResolution? {
         fun negotiate(settings: PlaybackSettings): PlaybackInfoResponse {
             val body = playbackJson.encodeToString(PlaybackInfoBody.serializer(),
-                PlaybackInfoBody(DeviceProfiles.forDevice(hevc, settings)))
+                PlaybackInfoBody(DeviceProfiles.forDevice(hevc, settings), mediaSourceId))
             return json.decodeFromString(PlaybackInfoResponse.serializer(), http.post(
             url("/Items/$itemId/PlaybackInfo", "userId" to userId),
             headers(),
@@ -147,7 +147,7 @@ class JellyfinClient(
         }
         var settings = PlaybackSettings()
         var info = negotiate(settings)
-        val source = info.MediaSources.orEmpty().firstOrNull()
+        val source = PlaybackResolver.pickSource(info, mediaSourceId)
         // No freshness facts means no reusable record. Do not assume an item ID implies
         // the same file after replacement/re-encoding.
         val fingerprint = source?.ETag?.takeIf { it.isNotBlank() }?.let {
@@ -170,6 +170,7 @@ class JellyfinClient(
             serverUrl = serverUrl,
             itemId = itemId,
             apiKey = accessToken,
+            mediaSourceId = mediaSourceId,
         )
         return resolution?.copy(sourceFingerprint = fingerprint, deviceProfile = deviceClass,
             settings = settings, itemId = itemId)
@@ -314,13 +315,20 @@ data class PlaybackResolution(val url: String, val playSessionId: String?, val i
 
 /** Pure resolution, so the precedence rules can be tested without a server. */
 object PlaybackResolver {
+    /** The requested source when the server returned it, else the first, as tvOS does. */
+    fun pickSource(info: PlaybackInfoResponse, mediaSourceId: String?): PlaybackSource? {
+        val sources = info.MediaSources.orEmpty()
+        return sources.firstOrNull { mediaSourceId != null && it.Id == mediaSourceId } ?: sources.firstOrNull()
+    }
+
     fun resolve(
         info: PlaybackInfoResponse,
         serverUrl: String,
         itemId: String,
         apiKey: String,
+        mediaSourceId: String? = null,
     ): PlaybackResolution? {
-        val source = info.MediaSources.orEmpty().firstOrNull()
+        val source = pickSource(info, mediaSourceId)
 
         // 1) Server transcode URL, used as given. Add the api_key if the server left it out.
         val relative = source?.TranscodingUrl

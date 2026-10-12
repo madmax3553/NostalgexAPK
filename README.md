@@ -75,7 +75,7 @@ Native Android TV (leanback) app, in this fork only. Not released. Target is par
 
 - **Stack:** Kotlin, Gradle (`android/`). Kept out of the Xcode project and the other way round.
 - **Target:** Android TV, D-pad navigation only.
-- **Versioning:** `versionName` and `versionCode` in `android/app/build.gradle`.
+- **Versioning:** `versionName` and `versionCode` in `android/app/build.gradle.kts`.
 - **Status:** scaffold builds. It shows a placeholder screen only.
 
 ### Public site (`index.html`)

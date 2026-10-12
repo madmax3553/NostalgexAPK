@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -14,6 +16,16 @@ val syncChannelConfig by tasks.registering(Copy::class) {
     into(channelConfigDir)
 }
 
+// TMDB and OMDb keys. They come from local.properties (git-ignored) or the environment and
+// are never committed. Empty means enrichment is skipped, like tvOS without its keys. Note
+// that a key compiled into an APK can be read back out of it, as with tvOS's Info.plist.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(name: String): String =
+    (localProps.getProperty(name) ?: System.getenv(name) ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+
 android {
     namespace = "io.github.madmax3553.staticgroot"
     compileSdk = 35
@@ -23,8 +35,14 @@ android {
         // Placeholder floor. Set the real device floor during the port.
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.1.20"
+        versionCode = 22
+        versionName = "0.1.21"
+        buildConfigField("String", "TMDB_API_KEY", "\"${secret("TMDB_API_KEY")}\"")
+        buildConfigField("String", "OMDB_API_KEY", "\"${secret("OMDB_API_KEY")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

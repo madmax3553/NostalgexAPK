@@ -11,9 +11,9 @@ import java.time.ZoneId
 import java.time.Instant
 
 /**
- * In-memory session shared by the activities. Nothing is persisted apart from the day history
- * the schedule needs. The token is not stored, so the user signs in again after the app closes.
- * Storing it needs the Android Keystore first (CLAUDE.md: secrets stay out of plain storage).
+ * In-memory session shared by the activities. The sign-in itself is persisted separately and
+ * encrypted by SessionStore, and the schedule keeps its own day history on disk. What lives here
+ * is rebuilt from the server on every cold start.
  */
 object AppSession {
     @Volatile var client: JellyfinClient? = null

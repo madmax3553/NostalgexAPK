@@ -25,7 +25,7 @@ written here, including the dev log, is readable by anyone.
 - Target Android TV (leanback). Remote-only navigation is required: every screen
   must be reachable and operable with a D-pad and no touch.
 - Version the Android app with `versionName` and `versionCode` in
-  `android/app/build.gradle`. Dev log entries name these the way tvOS entries
+  `android/app/build.gradle.kts`. Dev log entries name these the way tvOS entries
   name marketing version and build number.
 - Secrets for signing (keystore, passwords) never go in the repo. Use
   `local.properties` or environment variables, and keep them out of git.

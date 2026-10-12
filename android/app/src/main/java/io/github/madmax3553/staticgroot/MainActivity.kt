@@ -15,7 +15,17 @@ import io.github.madmax3553.staticgroot.channels.ChannelConfigLoader
 import io.github.madmax3553.staticgroot.channels.ChannelMemberships
 import io.github.madmax3553.staticgroot.channels.ChannelPools
 import io.github.madmax3553.staticgroot.channels.FilterClock
+import io.github.madmax3553.staticgroot.channels.MediaEnrichment
 import io.github.madmax3553.staticgroot.channels.MediaItem
+import io.github.madmax3553.staticgroot.enrichment.EnrichmentService
+import io.github.madmax3553.staticgroot.channels.isMusicVideo
+import io.github.madmax3553.staticgroot.enrichment.DeezerClient
+import io.github.madmax3553.staticgroot.enrichment.EnrichmentStore
+import io.github.madmax3553.staticgroot.enrichment.MusicBrainzClient
+import io.github.madmax3553.staticgroot.enrichment.MusicEnrichmentService
+import io.github.madmax3553.staticgroot.enrichment.MusicEnrichmentStore
+import io.github.madmax3553.staticgroot.enrichment.OmdbClient
+import io.github.madmax3553.staticgroot.enrichment.TmdbClient
 import io.github.madmax3553.staticgroot.jellyfin.AuthResult
 import io.github.madmax3553.staticgroot.jellyfin.HttpUrlJellyfinHttp
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
@@ -228,11 +238,20 @@ class MainActivity : Activity() {
             val musicVideoCount = client.countItems(section.id, "MusicVideo")
             Log.i(TAG, "  count Movie=$movieCount MusicVideo=$musicVideoCount")
 
-            val raw = client.loadMovies(section.id, includeItemTypes = "Movie")
+            val raw = client.loadMovies(section.id, includeItemTypes = JellyfinMapping.itemTypesFor(isMusic, musicVideoCount))
             val mapped = raw.mapNotNull { JellyfinMapping.toMediaItem(it, isMusicSection = isMusic) }
             Log.i(TAG, "  loaded raw=${raw.size} mapped=${mapped.size} (no runtime dropped: ${raw.size - mapped.size})")
             items.addAll(mapped)
         }
+
+        // Music genres, artists and years resolved on earlier launches. The pass that fills the
+        // cache runs in the background once the guide is up, so it never delays a launch.
+        val musicStore = MusicEnrichmentStore(File(filesDir, "music_enrichment_cache.json"))
+        val cachedMusic = musicStore.load()
+        for (i in items.indices) items[i] = MusicEnrichmentService.apply(listOf(items[i]), cachedMusic).first()
+        Log.i(TAG, "MUSIC cached rows=${cachedMusic.size} musicVideos=${items.count { it.isMusicVideo }}")
+
+        val enrichment = enrichItems(items)
 
         runOnUiThread { status.text = "Building ${items.size} items into channels. This can take a while on a TV." }
         val t0 = System.currentTimeMillis()
@@ -252,13 +271,20 @@ class MainActivity : Activity() {
         )
         val tParsed = System.currentTimeMillis()
         val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
-        val channels = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
+        val channels = ChannelPools.buildAll(config, items, enrichment = enrichment, memberships = memberships, clock = clock)
         val tBuilt = System.currentTimeMillis()
         Log.i(
             TAG,
             "items=${items.size} channels=${channels.size} withItems=${channels.count { it.pool.isNotEmpty() }} " +
-                "parseMs=${tParsed - t0} buildMs=${tBuilt - tParsed}",
+                "enriched=${enrichment.size} parseMs=${tParsed - t0} buildMs=${tBuilt - tParsed}",
         )
+        if (BuildConfig.DEBUG && enrichment.isNotEmpty()) {
+            // Measurement for the enrichment port: the same library with no enrichment at all.
+            val bare = ChannelPools.buildAll(config, items, memberships = memberships, clock = clock)
+            val gained = channels.count { it.pool.isNotEmpty() } - bare.count { it.pool.isNotEmpty() }
+            val changed = channels.indices.count { channels[it].unrestrictedPool.size != bare[it].unrestrictedPool.size }
+            Log.i(TAG, "ENRICHMENT delta: channelsWithItems +$gained, channelsWithDifferentPool=$changed of ${channels.size}")
+        }
 
         AppSession.stationZone = stationZone
         AppSession.init(File(filesDir, "day_history"))
@@ -299,10 +325,62 @@ class MainActivity : Activity() {
             AppSession.lastChannelId = shared.selection()
             AppSession.scheduler!!.usePublishedOnly()
         }
+        startMusicEnrichment(items, musicStore)
         runOnUiThread {
             startActivity(Intent(this, GuideActivity::class.java))
             finish()
         }
+    }
+
+    /**
+     * MusicBrainz (one request a second) and Deezer for music-video genres, artists and years.
+     * One daemon thread for the process, so a second sign-in does not start a second pass. It stops
+     * when the process does; progress is saved as it goes and picked up on the next launch.
+     */
+    private fun startMusicEnrichment(items: List<MediaItem>, store: MusicEnrichmentStore) {
+        if (items.none { it.isMusicVideo } || !musicPassRunning.compareAndSet(false, true)) return
+        val http = HttpUrlJellyfinHttp(readTimeoutMs = 20_000)
+        val agent = "StaticGroot/${BuildConfig.VERSION_NAME} (https://github.com/madmax3553/NostalgexAPK)"
+        val service = MusicEnrichmentService(
+            musicBrainz = MusicBrainzClient(http, agent),
+            deezer = DeezerClient(http, agent),
+            store = store,
+            log = { Log.i(TAG, "MUSIC $it") },
+        )
+        Thread {
+            try {
+                service.enrich(items)
+            } catch (e: Exception) {
+                Log.w(TAG, "MUSIC enrichment stopped (${e.javaClass.simpleName})")
+            } finally {
+                musicPassRunning.set(false)
+            }
+        }.apply { isDaemon = true; name = "music-enrichment"; priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    /**
+     * TMDB and OMDb metadata for the rule filter, from the cache and the network. Never throws:
+     * a channel lineup built without enrichment is worse than one built with it, but a launch
+     * that cannot finish is worse than both. Skipped without a TMDB key, as on tvOS.
+     */
+    private fun enrichItems(items: List<MediaItem>): Map<String, MediaEnrichment> = try {
+        val tmdbKey = BuildConfig.TMDB_API_KEY
+        val omdbKey = BuildConfig.OMDB_API_KEY
+        val enrichHttp = HttpUrlJellyfinHttp(readTimeoutMs = 15_000)
+        val service = EnrichmentService(
+            tmdb = if (tmdbKey.isNotBlank()) TmdbClient(enrichHttp, tmdbKey) else null,
+            omdb = if (omdbKey.isNotBlank()) OmdbClient(enrichHttp, omdbKey) else null,
+            store = EnrichmentStore(File(filesDir, "enrichment_cache.json")),
+            log = { Log.i(TAG, "ENRICHMENT $it") },
+        )
+        if (tmdbKey.isBlank()) Log.i(TAG, "ENRICHMENT no TMDB key configured, using cache only")
+        runOnUiThread { status.text = "Reading metadata cache…" }
+        service.enrich(items) { done, total ->
+            runOnUiThread { status.text = "Fetching metadata $done/$total" }
+        }.records
+    } catch (e: Exception) {
+        Log.w(TAG, "ENRICHMENT failed, building channels without it", e)
+        emptyMap()
     }
 
     /** Episodes for many series at once. Six requests in flight, as a simple cap. */
@@ -351,5 +429,6 @@ class MainActivity : Activity() {
         private const val QUICK_CONNECT_POLL_MS = 2_000L
         private const val QUICK_CONNECT_TIMEOUT_MS = 5 * 60_000L
         private const val EPISODE_FETCH_THREADS = 6
+        private val musicPassRunning = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }

@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
+import io.github.madmax3553.staticgroot.channels.displayTitle
 import io.github.madmax3553.staticgroot.schedule.ScheduleEntry
 import java.util.concurrent.Executors
 
@@ -55,6 +56,9 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
     var paused = false
         private set
     private var pausedAt = 0L
+    /** Which file of a disc-stacked movie is loaded, and where it begins in the whole movie. */
+    private var partIndex = 0
+    private var partStartSeconds = 0L
 
     fun setCaptions(enabled: Boolean) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -91,7 +95,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         val target = channel ?: return emptyList()
         return AppSession.scheduleFor(target, current.startUnix)?.entries.orEmpty()
             .filter { !it.block.isBumper && it.startUnix >= current.endUnix }.take(3)
-            .map { it.item.title + (it.item.seTag?.let { tag -> "  $tag" } ?: "") }
+            .map { it.item.displayTitle + (it.item.seTag?.let { tag -> "  $tag" } ?: "") }
     }
 
     init {
@@ -126,7 +130,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                 if (state == Player.STATE_BUFFERING) status("BUFFERING…")
                 if (state == Player.STATE_READY && firstFrame) status("")
                 if (state == Player.STATE_ENDED) {
-                    if (commercialPlaying) nextCommercial() else advance()
+                    if (commercialPlaying) nextCommercial() else if (!playNextPart()) advance()
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -207,12 +211,40 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             return
         }
         handler.removeCallbacks(bumperTick)
-        loadStream(programme.item.id, programme.block.mediaOffsetSeconds + elapsed, token)
+        // A disc-stacked movie is one programme over several files: find the file holding this
+        // offset. Everything else resolves to part zero at the same offset it always did.
+        val item = programme.item
+        val at = io.github.madmax3553.staticgroot.channels.MultiPartStack.locate(
+            item.parts, programme.block.mediaOffsetSeconds + elapsed)
+        val sourceId = if (item.parts.size > 1) item.parts[at.partIndex].sourceId else item.mediaSourceId
+        loadStream(item.id, at.seekSeconds, token, sourceId, at.partIndex, at.partStartSeconds)
     }
 
-    private fun loadStream(itemId: String, elapsed: Long, token: Int) {
+    /**
+     * A natural end of one disc of a stacked movie opens the next disc from its start instead of
+     * advancing the schedule, as tvOS handlePartEnded does. False when there is no next disc.
+     */
+    private fun playNextPart(): Boolean {
+        val current = entry ?: return false
+        if (current.block.isBumper) return false
+        val parts = current.item.parts
+        val next = partIndex + 1
+        if (next >= parts.size) return false
+        Log.i("StaticGroot", "MULTI-PART starting part ${next + 1} of ${parts.size}")
+        generation++
+        player.stop()
+        endSession()
+        loadStream(current.item.id, 0, generation, parts[next].sourceId, next,
+            io.github.madmax3553.staticgroot.channels.MultiPartStack.startOf(parts, next))
+        return true
+    }
+
+    private fun loadStream(itemId: String, elapsed: Long, token: Int, mediaSourceId: String? = null,
+        part: Int = 0, partStart: Long = 0) {
         val client = AppSession.client ?: return
         pending = true
+        partIndex = part
+        partStartSeconds = partStart
         firstFrame = false
         learningResolution = null
         sampleStart = 0
@@ -222,7 +254,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         status("TUNING…")
         network.execute {
             try {
-                val resolution = client.resolvePlayback(itemId)
+                val resolution = client.resolvePlayback(itemId, mediaSourceId)
                 handler.post {
                     if (token != generation || !active || released) {
                         if (!cleanup.isShutdown) cleanup.execute { runCatching { client.stopPlayback(resolution?.playSessionId) } }
@@ -322,7 +354,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                 val next = target?.let { AppSession.scheduleFor(it, current.endUnix) }
                     ?.entries?.firstOrNull { it.startUnix >= current.endUnix }
                 if (io.github.madmax3553.staticgroot.schedule.ProgrammeBoundary.shouldInterrupt(
-                        current.block, next?.block, player.currentPosition / 1000)) advance()
+                        current.block, next?.block, partStartSeconds + player.currentPosition / 1000)) advance()
             }
             if (player.isPlaying) Log.d("StaticGroot", "VIDEO playing positionMs=${player.currentPosition} frame=$firstFrame")
             changed()

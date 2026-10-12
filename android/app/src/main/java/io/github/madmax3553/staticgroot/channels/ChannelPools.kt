@@ -23,11 +23,12 @@ object ChannelPools {
     fun buildAll(
         config: ChannelConfig,
         items: List<MediaItem>,
+        /** Keyed by TMDB id, like tvOS. See [forItem]. */
         enrichment: Map<String, MediaEnrichment> = emptyMap(),
         memberships: ChannelMemberships = ChannelMemberships.EMPTY,
         clock: FilterClock,
     ): List<ChannelRuntime> {
-        val cached = items.map { buildFilterCache(it, enrichment[it.id]) }
+        val cached = items.map { buildFilterCache(it, enrichment.forItem(it)) }
         // Item-level facts (manifest claims, locks, exclusive hits) are computed once here,
         // not once per channel.
         val prepared = RuleFilter.prepare(cached, memberships, config.exclusiveRules)
