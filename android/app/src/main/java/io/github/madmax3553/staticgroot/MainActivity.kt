@@ -399,8 +399,15 @@ class MainActivity : Activity() {
                 }
                 records = records.map { r -> saved[r.id]?.let { r.copy(number = it.definition.number, name = it.name) } ?: r }
             } catch (e: Exception) {
-                Log.w(TAG, "LINEUP could not register generated channels (${e.message}), leaving them out")
-                channels = channels.filter { it.id !in generatedIds }
+                // An older service cannot take generated channels. Fall back to the original lineup,
+                // less any seasonal bundle that is out of season, so in-season channels (already
+                // known to the service) are not lost along with the generated ones.
+                Log.w(TAG, "LINEUP could not register generated channels (${e.message}), using the static lineup")
+                val inSeason = java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(zone).toLocalDate()
+                val offSeason = config.bundles.filter {
+                    it.activeMonths != null && !io.github.madmax3553.staticgroot.channels.SeasonalChannels.isInSeason(it.activeMonths, inSeason)
+                }.flatMap { it.channelIDs }.toSet()
+                channels = static.filter { it.id !in offSeason }
                 records = emptyList()
             }
         } else if (disabled.isNotEmpty()) {
