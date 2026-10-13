@@ -3,6 +3,30 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (4K remux fails to load: transcode too slow)
+
+**Measured.** A 65 GB 4K Dolby Vision profile 7 remux (about 90 Mbps, FLAC) failed
+to load on the test TV. The app caps streaming at 20 Mbps, so Jellyfin transcoded
+it: software HEVC decode, HDR tone-map and libx264 on a 4 core i5-3330S ran at
+0.45 to 0.5x real time (about 11 fps), so no segment arrived in the 30 second
+start window and the watchdog stopped playback. The TV is on Ethernet.
+
+**Changed.** When a transcode does not start within 30 seconds, the same
+programme is retried once as direct play with the bitrate cap lifted to 200 Mbps
+(`resolvePlayback(forceDirect = true)`, once per item per process). A success is
+recorded through the existing playback learning like any other, so the shared
+service can offer it as the preferred setting next time. A unit test checks the
+request carries the lifted cap and the normal one does not.
+
+**Verified.** On the test TV the file now plays after the retry (reported by the
+tester; sustained playback not measured). Direct playing 90 Mbps depends on the
+network: unmeasured over Wi-Fi.
+
+**Not done.** The first tune of such a file still waits 30 seconds before the
+retry. Choosing direct play up front for files above the cap would remove the
+wait but would also direct play over Wi-Fi without a fallback; not decided. The
+real fix for transcoding is hardware on the media host.
+
 ## 2026-10-12 (green picture on Dolby Vision files)
 
 **Reported.** A tester-side report that Demolition Man plays green.

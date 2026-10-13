@@ -135,7 +135,7 @@ class JellyfinClient(
      * Playback URL for an item. Mirrors tvOS JellyfinPlaybackResolver: the server's transcode
      * URL wins, then a static direct-play stream. Returns null when neither exists.
      */
-    fun resolvePlayback(itemId: String, mediaSourceId: String? = null): PlaybackResolution? {
+    fun resolvePlayback(itemId: String, mediaSourceId: String? = null, forceDirect: Boolean = false): PlaybackResolution? {
         fun negotiate(settings: PlaybackSettings): PlaybackInfoResponse {
             val body = playbackJson.encodeToString(PlaybackInfoBody.serializer(),
                 PlaybackInfoBody(DeviceProfiles.forDevice(hevc, settings), mediaSourceId))
@@ -145,7 +145,10 @@ class JellyfinClient(
             body,
             ))
         }
-        var settings = PlaybackSettings()
+        // forceDirect lifts the bitrate cap so the server offers the file itself instead of a
+        // transcode it cannot produce fast enough. It also skips learned settings, which came
+        // from the transcode path that just failed.
+        var settings = if (forceDirect) PlaybackSettings(maxBitrate = DIRECT_PLAY_BITRATE) else PlaybackSettings()
         var info = negotiate(settings)
         val source = PlaybackResolver.pickSource(info, mediaSourceId)
         // No freshness facts means no reusable record. Do not assume an item ID implies
@@ -154,7 +157,7 @@ class JellyfinClient(
             "${source.Id}|$it|${source.Size}|${source.RunTimeTicks}"
         }
         val shared = io.github.madmax3553.staticgroot.AppSession.sharedStation
-        if (fingerprint != null && shared != null) {
+        if (fingerprint != null && shared != null && !forceDirect) {
             val key = "$itemId|$fingerprint|$deviceClass"
             val preferred = learnedCache[key] ?: runCatching {
                 shared.learnedPlayback(itemId, fingerprint, deviceClass).preferred
@@ -191,6 +194,8 @@ class JellyfinClient(
 
     companion object {
         const val PAGE_SIZE = 200
+        /** 4K remuxes run near 100 Mbps. This only has to clear the file's own bitrate. */
+        const val DIRECT_PLAY_BITRATE = 200_000_000
 
         fun authorizationHeader(deviceId: String, token: String): String {
             val fields = mutableListOf(

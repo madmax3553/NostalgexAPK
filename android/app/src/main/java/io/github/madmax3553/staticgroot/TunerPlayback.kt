@@ -65,6 +65,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         private set
     private var pausedAt = 0L
     /** Which file of a disc-stacked movie is loaded, and where it begins in the whole movie. */
+    /** Items whose transcode did not start, retried as direct play. Per process, so a restart tries the transcode again. */
+    private val directItems = HashSet<String>()
     private var partIndex = 0
     private var partStartSeconds = 0L
 
@@ -262,7 +264,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         status("TUNING…")
         network.execute {
             try {
-                val resolution = client.resolvePlayback(itemId, mediaSourceId)
+                val resolution = client.resolvePlayback(itemId, mediaSourceId, forceDirect = itemId in directItems)
                 handler.post {
                     if (token != generation || !active || released) {
                         if (!cleanup.isShutdown) cleanup.execute { runCatching { client.stopPlayback(resolution?.playSessionId) } }
@@ -342,6 +344,18 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                 reportObservation("failure")
                 player.stop()
                 endSession()
+                val stalled = entry
+                if (stalled != null && !stalled.block.isBumper && !commercialPlaying &&
+                    learningResolution?.isDirectPlay == false && directItems.add(stalled.item.id)) {
+                    // A transcode that cannot start is a server capacity problem (measured: a 4K
+                    // remux at 0.45x real time). Try the file itself once before giving up.
+                    Log.i("StaticGroot", "VIDEO transcode did not start, retrying as direct play")
+                    val now = System.currentTimeMillis() / 1000
+                    generation++
+                    resolve(stalled, (now - stalled.startUnix).coerceAtLeast(0), generation)
+                    handler.postDelayed(this, 1000)
+                    return
+                }
                 status("STREAM DID NOT START\nJellyfin media segments stalled. Press OK to retry")
             }
             val current = entry

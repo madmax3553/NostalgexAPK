@@ -232,6 +232,18 @@ class JellyfinClientTest {
     }
 
     @Test
+    fun forceDirectLiftsTheBitrateCapSoTheServerOffersTheFile() {
+        val http = FakeHttp(mapOf("/PlaybackInfo" to """{"MediaSources":[{"Id":"m","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""))
+        val client = JellyfinClient(serverUrl, http, deviceId, "tok", "u1")
+        client.resolvePlayback("item1")
+        client.resolvePlayback("item1", forceDirect = true)
+        val normal = http.calls[0].body!!; val forced = http.calls[1].body!!
+        assertTrue(normal.contains("\"MaxStreamingBitrate\":20000000"))
+        assertTrue(forced.contains("\"MaxStreamingBitrate\":${JellyfinClient.DIRECT_PLAY_BITRATE}"))
+        assertTrue(forced.contains("\"MaxStaticBitrate\":${JellyfinClient.DIRECT_PLAY_BITRATE}"))
+    }
+
+    @Test
     fun singleFilePlaybackInfoBodyIsUnchangedByMultiPartSupport() {
         val http = FakeHttp(mapOf("/PlaybackInfo" to """{"MediaSources":[{"Id":"m","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""))
         JellyfinClient(serverUrl, http, deviceId, "tok", "u1").resolvePlayback("item1")
