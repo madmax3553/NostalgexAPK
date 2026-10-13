@@ -3,6 +3,24 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (films cut off at midnight)
+
+**Measured.** Channel 14 on 12 and 13 October ended its day with a film starting
+at 23:45, so the guide showed it for 15 minutes and the next day opened on a
+different title. Across 298 published channel-days, 20 (about 7 percent) ended on
+a programme cut to under 25 minutes. The packer filled each day to midnight
+without checking that the last programme fitted.
+
+**Changed.** StaticGroot 0.1.25 (26). `withBumpers` no longer starts a programme
+when more than a quarter of its runtime (with the mid break) would fall after
+midnight. A later programme that fits is pulled forward; if none does the day ends
+on a break. Two unit tests. Android-only.
+
+**Not changed.** Published days are fixed, so channel 14 and the other 19 stay
+as they are until force regenerated. The break before the last-slot swap uses the
+same 30 second minimum as any other. A day can now end on a longer filler break
+when nothing short enough exists; not measured on a real library.
+
 ## 2026-10-12 (watchdog killed streams that had started)
 
 **Measured.** A 4K HEVC remux with TrueHD and DTS-HD audio (about 84 Mbps) failed

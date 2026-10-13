@@ -104,7 +104,16 @@ object DailyPacker {
                 result.add(Block(block.item, cursor, finish))
                 cursor = finish
             }
-            val next = ordered.getOrNull(index + 1) ?: break
+            if (index + 1 >= ordered.size) break
+            // A programme that would lose more than a quarter of itself at midnight is not started:
+            // a film at 23:45 showed for 15 minutes, then the next day opened on something else.
+            // Pull a later programme that fits forward; with none, the day ends on a break.
+            if (!fitsDay(ordered[index + 1], cursor + seconds, end)) {
+                val j = (index + 2 until ordered.size).firstOrNull { fitsDay(ordered[it], cursor + seconds, end) }
+                if (j == null) break
+                java.util.Collections.swap(ordered, index + 1, j)
+            }
+            val next = ordered[index + 1]
             if (cursor < end) {
                 val following = ordered.getOrNull(index + 2)
                 val startsShowBlock = next.item.type == io.github.madmax3553.staticgroot.channels.MediaType.EPISODE &&
@@ -123,6 +132,13 @@ object DailyPacker {
             result.add(Block(result.last().item, cursor, end, isBumper = true))
         }
         return result
+    }
+
+    /** True when at least 75 percent of the programme, with its mid break, airs before [end]. */
+    internal fun fitsDay(block: Block, start: Long, end: Long): Boolean {
+        val runtime = block.item.duration * 60L
+        val total = runtime + if (runtime > 1800) 60 else 0
+        return total <= 0 || (end - start) * 4 >= total * 3
     }
 
     private fun movieIdentity(item: MediaItem): String? = if (item.type == MediaType.MOVIE &&
