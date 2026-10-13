@@ -55,8 +55,8 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         if (crawling) {
             index = CrawlSelection.centerIndex(crawlRows, channels.size)
             crawling = false
-            firstRow = (index - 2).coerceAtLeast(0)
-            keepVisible()
+            firstRow = (index - 2).coerceIn(0, (channels.size - GuideNav.VISIBLE).coerceAtLeast(0))
+            keepVisible(GuideNav.Reveal.JUMP)
             selected(channels[index])
             invalidate()
             return true
@@ -79,7 +79,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         val next = channels.indexOfFirst { it.id == id }.coerceAtLeast(0)
         if (next == index && crawling) return
         index = next
-        keepVisible()
+        keepVisible(GuideNav.Reveal.JUMP)
         invalidate()
     }
 
@@ -93,27 +93,26 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         userInteraction()
         if (channels.isEmpty()) return super.onKeyDown(keyCode, event)
+        var reveal = GuideNav.Reveal.DOWN
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> {
-                if (index == 0) { openSettings(); return true }
-                index--
+                index = GuideNav.previous(index) ?: run { openSettings(); return true }
+                reveal = GuideNav.Reveal.UP
             }
-            KeyEvent.KEYCODE_DPAD_DOWN -> index = (index + 1) % channels.size
+            KeyEvent.KEYCODE_DPAD_DOWN -> { index = GuideNav.next(index, channels.size); reveal = GuideNav.Reveal.DOWN }
             KeyEvent.KEYCODE_DPAD_LEFT -> { slotOffset = (slotOffset - 1).coerceAtLeast(0); invalidate(); return true }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { slotOffset = (slotOffset + 1).coerceAtMost(44); invalidate(); return true }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { tune(channels[index]); return true }
             else -> return super.onKeyDown(keyCode, event)
         }
-        keepVisible()
+        keepVisible(reveal)
         selected(channels[index])
         invalidate()
         return true
     }
 
-    private fun keepVisible() {
-        val visible = 5
-        if (index < firstRow) firstRow = index
-        if (index >= firstRow + visible) firstRow = index - visible + 1
+    private fun keepVisible(reveal: GuideNav.Reveal) {
+        firstRow = GuideNav.firstRowFor(index, firstRow, channels.size, reveal)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -142,7 +141,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         val startRow = if (crawling) crawlRows.toInt() else firstRow
         val fraction = if (crawling) crawlRows - startRow else 0f
         for (row in 0 until 6) {
-            val i = if (crawling) (startRow + row) % channels.size else startRow + row
+            val i = GuideNav.rowIndex(startRow, row, channels.size)
             val ch = channels.getOrNull(i) ?: break
             val top = header + (row - fraction) * rowHeight
             val bottom = top + rowHeight

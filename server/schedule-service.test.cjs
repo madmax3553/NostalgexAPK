@@ -51,6 +51,29 @@ test('channel setup updates are shared and version conflicts rejected', t => {
   assert.equal(store.setup(station).channels[0].enabled, false);
   assert.throws(() => store.updateSetup(station, saved), /reload/);
 });
+test('generated channels append once, publish days, and never rewrite existing ones', t => {
+  const store = new StationStore(directory(t)); store.setup(station, setup);
+  const gen = { id: 1000007, name: 'STAR TREK', enabled: true, definition: { id: 1000007, number: 300, name: 'STAR TREK', colorHex: '#fff' } };
+  const added = store.addChannels(station, { channels: [gen] });
+  assert.equal(added.version, 2);
+  assert.deepEqual(added.channels.map(c => c.id), [1, 1000007]);
+  // A second device proposing the same id with another name changes nothing, not even the version.
+  const again = store.addChannels(station, { channels: [{ ...gen, name: 'OTHER', definition: { ...gen.definition, name: 'OTHER' } }] });
+  assert.equal(again.version, 2);
+  assert.equal(again.channels[1].name, 'STAR TREK');
+  // Enabled flags still follow the existing update path, and the new channel can publish a day.
+  store.day(station, 1000007, '2026-10-10', { blocks: [block] });
+  assert.equal(store.day(station, 1000007, '2026-10-10').blocks[0].itemId, 'm1');
+});
+test('generated channels cannot take static ids or carry malformed definitions', t => {
+  const store = new StationStore(directory(t)); store.setup(station, setup);
+  const ok = { id: 1000001, name: 'X', definition: { id: 1000001 } };
+  assert.throws(() => store.addChannels(station, { channels: [{ ...ok, id: 5, definition: { id: 5 } }] }), /Invalid channel/);
+  assert.throws(() => store.addChannels(station, { channels: [{ ...ok, definition: { id: 2 } }] }), /Invalid channel/);
+  assert.throws(() => store.addChannels(station, { channels: [{ ...ok, name: '' }] }), /Invalid channel/);
+  assert.throws(() => store.addChannels(station, { channels: 'x' }), /Invalid channels/);
+  assert.equal(store.setup(station).channels.length, 1);
+});
 test('HTTP rejects missing auth and publishes authenticated requests', async t => {
   const token = 'synthetic-test-key-1234567890';
   const server = createServer({ directory: directory(t), token });

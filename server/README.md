@@ -101,6 +101,7 @@ All requests require `Authorization: Bearer <service-key>`.
 | `POST /v1/stations/{station}/setup` | Create setup if absent; otherwise read saved setup |
 | `GET /v1/stations/{station}/setup` | Read definitions, enabled flags, version and time zone |
 | `PUT /v1/stations/{station}/setup` | Update enabled flags using current version; stale version gets 409 |
+| `POST /v1/stations/{station}/setup/channels` | Append channels the client generated from its library (ids from 1,000,000). Append-only: existing ids are never changed |
 | `POST /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Publish complete blocks if absent; otherwise return published blocks |
 | `GET /v1/stations/{station}/days/{channel}/{YYYY-MM-DD}` | Read a published day |
 | `POST /v1/stations/{station}/selection` | Store last channel |

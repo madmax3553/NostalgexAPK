@@ -3,6 +3,69 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (library channels, one seasonal channel, guide wrap)
+
+**Shipped.** Nothing. StaticGroot 0.1.22 (23) builds and passes tests but has not
+been installed on a TV. The shared service needs the new image (below) before
+generated channels can sync.
+
+**Changed.**
+- Bundles are not being ported. On Android every channel in `channels.json` was
+  always on, including the Christmas and Scream ones in July. Now the channels of
+  any bundle with `activeMonths` leave the lineup, and in season one channel
+  takes their place, holding the union of their items and numbered where the
+  first of them sat. Season follows tvOS `isInSeason` (September from the 15th).
+  The repeat allowance needed no scheduler change: `packDay` already loops a
+  pool and `withBumpers` spaces repeats, so a small seasonal pool repeats more.
+- Channels derived from the library (`LibraryChannelPlanner`, Android only, not
+  in tvOS): a franchise when titles share a leading phrase ("Star Trek" over its
+  series and films), one channel for a series of 50 or more episodes, and a genre
+  channel per type when a genre is at least 12 percent of that type and holds a
+  day of content (movies) or 60 episodes. Guards, each with a test: a shared
+  first word alone is not a franchise ("American ..."), filler phrases are not
+  ("I Am ..."), a one-word franchise needs a sequel marker ("Rocky", "Rocky
+  II"), nested phrases resolve to the shorter one, franchise items are removed
+  from genre pools so they do not repeat, kids, horror, documentary and
+  reality genres never get one, and a candidate that covers 80 percent or more
+  of an existing channel is skipped. At most 12 generated channels.
+- Generated channels keep their id (a hash of the spec, from 1,000,000), number
+  (from 300, first free) and name in `generated_channels.json`, and stay while
+  they hold 3 items, so a library change does not make channels flicker.
+- Shared station: the service refused days for channels not in the saved setup,
+  and setup could not grow. New `POST /v1/stations/{station}/setup/channels`
+  appends channels with ids from 1,000,000 and never changes existing ones, so
+  every TV ends up with the same names and numbers. If the service is older and
+  refuses, generated and seasonal channels are left out and the launch continues.
+- Guide wrap: Down already wrapped the selection. The window now scrolls through
+  the seam, so channel 1 appears under the last channel instead of the list
+  jumping to the top. Up from channel 1 still goes to Settings, as the tvOS
+  tests require. The arithmetic is in `GuideNav` with tests.
+
+**Verified.** 227 Android tests (was 198) and 16 server tests (was 14) pass.
+Assembly and lint pass; both channel smoke scripts pass. Server README has the
+new endpoint.
+
+**Not verified.**
+- Nothing has run on a real library. The planner's thresholds (12 percent, 50
+  episodes, 300 minutes, overlap 80 percent) are judgement, not measured. The
+  `LINEUP` log line names every generated channel and its size: that is the
+  measurement to take, and false positives such as an accidental franchise are
+  the thing to look for.
+- The wrap is verified as arithmetic, not on a remote. The report that it did not
+  wrap could not be reproduced from the code, so if it still misbehaves on the TV
+  the cause is elsewhere.
+- Generated channels have not met a real shared service, and the overlap
+  reducer treats them like any channel.
+- Swift untouched and not run.
+
+**Half-done.** No TV-side screen to turn generated channels on or off; the
+`enabled` flag on the service is honoured but only settable through its API.
+Franchise detection uses titles only, with no TMDB collections.
+
+**Next.** Deploy the service image with the new endpoint, run a debug build and
+read the `LINEUP` line. A person needs to say whether a generated channel
+should ever be removable from the TV.
+
 ## 2026-10-11 (enrichment, music genres, multi-part movies)
 
 **Shipped.** Nothing. StaticGroot 0.1.21 (22) builds and passes tests but has not

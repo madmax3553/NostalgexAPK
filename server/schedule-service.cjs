@@ -51,6 +51,31 @@ class StationStore {
     fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(tmp, file);
     return value;
   }
+  // Appends channels the client generated from its library (franchise, genre and seasonal
+  // channels). Append-only: ids already present are left alone, so a second device or a later
+  // launch cannot rewrite a channel other devices already publish days for. Generated ids live
+  // at or above 1,000,000, which keeps this endpoint away from the static channels.
+  addChannels(station, proposal) {
+    const saved = this.setup(station);
+    const list = proposal && proposal.channels;
+    if (!Array.isArray(list) || list.length > 200) throw new Error('Invalid channels');
+    const have = new Set(saved.channels.map(c => c.id));
+    const fresh = [];
+    for (const c of list) {
+      if (!c || !Number.isSafeInteger(c.id) || c.id < 1000000 || c.id >= 2147483647 ||
+          typeof c.name !== 'string' || c.name.length < 1 || c.name.length > 80 ||
+          !c.definition || typeof c.definition !== 'object' || c.definition.id !== c.id)
+        throw new Error('Invalid channel');
+      if (!have.has(c.id) && !fresh.some(f => f.id === c.id)) fresh.push({ id: c.id, name: c.name, enabled: true, definition: c.definition });
+    }
+    if (saved.channels.length + fresh.length > 1000) throw new Error('Too many channels');
+    if (fresh.length === 0) return saved;
+    const value = { ...saved, version: saved.version + 1, channels: [...saved.channels, ...fresh] };
+    const file = path.join(this.stationPath(station), 'setup.json');
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(tmp, file);
+    return value;
+  }
   day(station, channelId, dayKey, proposal) {
     if (!Number.isSafeInteger(channelId) || channelId < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey))
       throw new Error('Invalid channel or day');
@@ -172,6 +197,8 @@ function createServer({ directory, token }) {
           return reply(200, { channelId: body.channelId });
         }
       }
+      if (parts[3] === 'setup' && parts[4] === 'channels' && parts.length === 5 && req.method === 'POST')
+        return reply(200, store.addChannels(station, body));
       if (parts[3] === 'setup' && parts.length === 4) {
         if (req.method === 'POST') return reply(200, store.setup(station, body));
         if (req.method === 'GET') return reply(200, store.setup(station));

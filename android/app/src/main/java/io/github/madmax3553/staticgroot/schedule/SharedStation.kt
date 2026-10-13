@@ -55,6 +55,17 @@ class SharedStation(private val base: String, key: String, stationId: String) {
             StationSetup.serializer(), StationSetup(timeZone = zone,
                 channels = definitions.map { SharedChannel(it.id, it.name, definition = it) })))).also { generation = it.generation }
 
+    /**
+     * Adds channels this device derived from the library (seasonal, franchise, genre). Append-only
+     * on the server: an id already there is left as it is, so every device ends up with the same
+     * name and number. Returns the setup as saved, which is what to use. An older service without
+     * this endpoint answers with an error, and the caller carries on without generated channels.
+     */
+    fun addChannels(definitions: List<ChannelDefinition>): StationSetup = json.decodeFromString(
+        StationSetup.serializer(), http.post("$root/setup/channels", headers, json.encodeToString(
+            StationSetup.serializer(), StationSetup(timeZone = "", channels =
+                definitions.map { SharedChannel(it.id, it.name, definition = it) })))).also { generation = it.generation }
+
     fun publish(ch: ChannelRuntime, dayKey: String, blocks: List<Block>, items: Map<String, MediaItem>): List<Block> {
         val proposal = SharedDay(storedBlocks(blocks), generation)
         val saved = json.decodeFromString(SharedDay.serializer(), http.post(

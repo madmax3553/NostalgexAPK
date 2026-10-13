@@ -12,7 +12,12 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.madmax3553.staticgroot.channels.ChannelConfigLoader
+import io.github.madmax3553.staticgroot.channels.ChannelConfig
 import io.github.madmax3553.staticgroot.channels.ChannelMemberships
+import io.github.madmax3553.staticgroot.channels.ChannelRuntime
+import io.github.madmax3553.staticgroot.channels.DYNAMIC_CHANNEL_ID_BASE
+import io.github.madmax3553.staticgroot.channels.GeneratedChannelStore
+import io.github.madmax3553.staticgroot.channels.Lineup
 import io.github.madmax3553.staticgroot.channels.ChannelPools
 import io.github.madmax3553.staticgroot.channels.FilterClock
 import io.github.madmax3553.staticgroot.channels.MediaEnrichment
@@ -260,18 +265,24 @@ class MainActivity : Activity() {
         val shared = if (companion.url.isNotBlank()) io.github.madmax3553.staticgroot.schedule.SharedStation(
             companion.url, companion.key, client.stationIdentity()) else null
         var stationZone = ZoneId.systemDefault()
+        var disabledGenerated = emptySet<Int>()
         if (shared != null) {
             runOnUiThread { status.text = "Reading shared channel setup…" }
             val setup = shared.setup(config.channels, stationZone.id)
             stationZone = ZoneId.of(setup.timeZone)
-            config = config.copy(channels = setup.channels.filter { it.enabled }.map { it.definition })
+            // Generated channels (id from DYNAMIC_CHANNEL_ID_BASE) have no rules, so they are not
+            // built here. They are rebuilt from the library below.
+            config = config.copy(channels = setup.channels
+                .filter { it.enabled && it.id < DYNAMIC_CHANNEL_ID_BASE }.map { it.definition })
+            disabledGenerated = setup.channels.filter { !it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }.map { it.id }.toSet()
         }
         val memberships = ChannelMemberships.parse(
             assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
         )
         val tParsed = System.currentTimeMillis()
         val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
-        val channels = ChannelPools.buildAll(config, items, enrichment = enrichment, memberships = memberships, clock = clock)
+        val staticChannels = ChannelPools.buildAll(config, items, enrichment = enrichment, memberships = memberships, clock = clock)
+        val channels = buildLineup(config, staticChannels, items, shared, stationZone, clock, disabledGenerated)
         val tBuilt = System.currentTimeMillis()
         Log.i(
             TAG,
@@ -356,6 +367,49 @@ class MainActivity : Activity() {
                 musicPassRunning.set(false)
             }
         }.apply { isDaemon = true; name = "music-enrichment"; priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    /**
+     * The guide's channels: static ones less the seasonal bundles, the one in-season channel, and
+     * channels derived from the library (see [Lineup]). With a shared station the generated ones
+     * are registered on the service first, since it refuses days for channels it does not know;
+     * if it cannot register them they are left out rather than failing the launch.
+     */
+    private fun buildLineup(
+        config: ChannelConfig, static: List<ChannelRuntime>, items: List<MediaItem>,
+        shared: io.github.madmax3553.staticgroot.schedule.SharedStation?, zone: ZoneId, clock: FilterClock,
+        disabled: Set<Int>,
+    ): List<ChannelRuntime> {
+        val store = GeneratedChannelStore(File(filesDir, "generated_channels.json"))
+        val lineup = try {
+            Lineup.build(config, static, items, store.load(), java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(zone).toLocalDate())
+        } catch (e: Exception) {
+            Log.w(TAG, "LINEUP failed (${e.javaClass.simpleName}), using the static channels", e)
+            return static
+        }
+        val generatedIds = lineup.generated.map { it.definition.id }.toSet()
+        var channels = lineup.channels
+        var records = lineup.records
+        if (shared != null && lineup.generated.isNotEmpty()) {
+            try {
+                val saved = shared.addChannels(lineup.generated.map { it.definition }).channels.associateBy { it.id }
+                channels = channels.mapNotNull { rt ->
+                    if (rt.id !in generatedIds) rt
+                    else saved[rt.id]?.takeIf { it.enabled }?.let { ChannelRuntime(it.definition, rt.pool) }
+                }
+                records = records.map { r -> saved[r.id]?.let { r.copy(number = it.definition.number, name = it.name) } ?: r }
+            } catch (e: Exception) {
+                Log.w(TAG, "LINEUP could not register generated channels (${e.message}), leaving them out")
+                channels = channels.filter { it.id !in generatedIds }
+                records = emptyList()
+            }
+        } else if (disabled.isNotEmpty()) {
+            channels = channels.filter { it.id !in disabled }
+        }
+        runCatching { store.save(records) }
+        Log.i(TAG, "LINEUP static=${static.size} shown=${channels.size} generated=" +
+            lineup.generated.joinToString { "${it.spec.kind}:${it.definition.name}(${it.pool.size})" })
+        return channels
     }
 
     /**
