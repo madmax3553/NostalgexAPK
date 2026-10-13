@@ -37,18 +37,28 @@ object NoHistory : AiredHistory {
     override fun record(channelId: Int, dayKey: String, orderedItemIds: List<String>) = Unit
 }
 
-/** Local-day helpers. Matches DailyManifestStore in Swift, for the device's time zone. */
+/**
+ * Broadcast-day helpers. A day runs from [START_HOUR]:00 to the next [START_HOUR]:00 local time,
+ * not midnight: a film that is on at midnight plays through, and the day's end, with the long
+ * station breaks it sometimes needs, falls at 3 am when almost nobody is watching. A day is still
+ * named by its calendar date and seeded by that date's midnight, so ordering matches Swift.
+ */
 object LocalDays {
-    fun startOfDayUnix(unix: Long, zone: ZoneId): Long {
-        val date = ZonedDateTime.ofInstant(Instant.ofEpochSecond(unix), zone).toLocalDate()
-        return date.atStartOfDay(zone).toEpochSecond()
-    }
+    const val START_HOUR = 3
 
-    /** Swift: Int(startOfLocalDay.timeIntervalSince1970 / 86400). Truncates like Swift does. */
-    fun dayNumber(unix: Long, zone: ZoneId): Long = startOfDayUnix(unix, zone) / 86400
+    /** The calendar date of the broadcast day containing [unix]. 01:00 on the 13th belongs to the 12th. */
+    fun broadcastDate(unix: Long, zone: ZoneId): LocalDate =
+        ZonedDateTime.ofInstant(Instant.ofEpochSecond(unix), zone).minusHours(START_HOUR.toLong()).toLocalDate()
 
-    fun dayKey(unix: Long, zone: ZoneId): String =
-        ZonedDateTime.ofInstant(Instant.ofEpochSecond(unix), zone).toLocalDate().toString()
+    /** When the broadcast day named [date] begins. */
+    fun dayStartFor(date: LocalDate, zone: ZoneId): Long = date.atTime(START_HOUR, 0).atZone(zone).toEpochSecond()
+
+    fun startOfDayUnix(unix: Long, zone: ZoneId): Long = dayStartFor(broadcastDate(unix, zone), zone)
+
+    /** Swift: Int(startOfLocalDay.timeIntervalSince1970 / 86400), of the day's calendar date. */
+    fun dayNumber(unix: Long, zone: ZoneId): Long = broadcastDate(unix, zone).atStartOfDay(zone).toEpochSecond() / 86400
+
+    fun dayKey(unix: Long, zone: ZoneId): String = broadcastDate(unix, zone).toString()
 
     fun dayKeyOf(date: LocalDate): String = date.toString()
 }
@@ -105,12 +115,13 @@ object DailyPacker {
                 cursor = finish
             }
             if (index + 1 >= ordered.size) break
-            // A programme that would lose more than a quarter of itself at midnight is not started:
-            // a film at 23:45 showed for 15 minutes, then the next day opened on something else.
-            // Pull a later programme that fits forward; with none, the day ends on a break.
-            if (!fitsDay(ordered[index + 1], cursor + seconds, end)) {
-                val j = (index + 2 until ordered.size).firstOrNull { fitsDay(ordered[it], cursor + seconds, end) }
-                if (j == null) break
+            // The day ends at 3 am, where a long station break is fine and a film cut off mid-scene
+            // is not. Only start a programme that airs whole before the day ends. If the next one
+            // would not fit, pull a later one that does forward (judged against the latest a
+            // break can push its start); if none fits, the day ends on a break.
+            val latest = cursor + StationTiming.MAX_BREAK_SECONDS
+            if (!fitsDay(ordered[index + 1], latest, end)) {
+                val j = (index + 2 until ordered.size).firstOrNull { fitsDay(ordered[it], latest, end) } ?: break
                 java.util.Collections.swap(ordered, index + 1, j)
             }
             val next = ordered[index + 1]
@@ -124,6 +135,8 @@ object DailyPacker {
                 // separates showings without the former hour-long padding.
                 val breakEnd = minOf(end, StationTiming.nextStart(cursor, dayStart,
                     if (sameMovie) 300 else seconds, next.item.type, startsRepeatedShowBlock = startsShowBlock))
+                // The exact start is known now. A grid-aligned start can push a close fit past the end.
+                if (!fitsDay(next, breakEnd, end)) break
                 result.add(Block(next.item, cursor, breakEnd, isBumper = true))
                 cursor = breakEnd
             }
@@ -134,11 +147,11 @@ object DailyPacker {
         return result
     }
 
-    /** True when at least 75 percent of the programme, with its mid break, airs before [end]. */
+    /** True when the whole programme, with its mid break, airs between [start] and [end]. */
     internal fun fitsDay(block: Block, start: Long, end: Long): Boolean {
         val runtime = block.item.duration * 60L
         val total = runtime + if (runtime > 1800) 60 else 0
-        return total <= 0 || (end - start) * 4 >= total * 3
+        return total <= 0 || start + total <= end
     }
 
     private fun movieIdentity(item: MediaItem): String? = if (item.type == MediaType.MOVIE &&
@@ -352,7 +365,6 @@ class ChannelScheduler(
     }
 
     private fun nextDayStart(dayStart: Long): Long {
-        val date = ZonedDateTime.ofInstant(Instant.ofEpochSecond(dayStart), zone).toLocalDate().plusDays(1)
-        return date.atStartOfDay(zone).toEpochSecond()
+        return LocalDays.dayStartFor(LocalDays.broadcastDate(dayStart, zone).plusDays(1), zone)
     }
 }

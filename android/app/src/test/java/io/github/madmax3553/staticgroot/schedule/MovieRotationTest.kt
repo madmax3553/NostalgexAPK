@@ -35,8 +35,28 @@ class MovieRotationTest {
     @Test fun publishedDayWinsOverNewPoolAndHistory() {
         val scheduler = ChannelScheduler(java.time.ZoneOffset.UTC)
         val movie = MediaItem("a", "Film", MediaType.MOVIE, duration = 90)
-        val published = listOf(Block(movie, 0, 5400))
-        scheduler.installPublished(1, 0, published)
-        assertEquals(published, scheduler.dayBlocks(1, listOf(movie.copy(id = "new")), false, 3600))
+        val dayStart = 3 * 3600L // broadcast days begin at 03:00
+        val published = listOf(Block(movie, dayStart, dayStart + 5400))
+        scheduler.installPublished(1, dayStart, published)
+        assertEquals(published, scheduler.dayBlocks(1, listOf(movie.copy(id = "new")), false, dayStart + 3600))
+    }
+
+    @Test fun theBroadcastDayRunsFromThreeToThreeAndFilmsPlayThroughMidnight() {
+        val z = java.time.ZoneOffset.UTC
+        val noon = java.time.LocalDate.of(2026, 10, 12).atTime(12, 0).toEpochSecond(z)
+        val oneAm = java.time.LocalDate.of(2026, 10, 13).atTime(1, 0).toEpochSecond(z)
+        val threeAm = java.time.LocalDate.of(2026, 10, 13).atTime(3, 0).toEpochSecond(z)
+        assertEquals("2026-10-12", LocalDays.dayKey(oneAm, z))
+        assertEquals("2026-10-13", LocalDays.dayKey(threeAm, z))
+        assertEquals(LocalDays.dayStartFor(java.time.LocalDate.of(2026, 10, 12), z), LocalDays.startOfDayUnix(noon, z))
+        assertEquals("01:00 shares its day with noon", LocalDays.startOfDayUnix(noon, z), LocalDays.startOfDayUnix(oneAm, z))
+        assertEquals("the seed day number stays the calendar date's", LocalDays.dayNumber(noon, z), LocalDays.dayNumber(oneAm, z))
+        // Packed from 03:00, a day ends at the next 03:00, never at midnight.
+        val start = LocalDays.startOfDayUnix(noon, z)
+        val s = ChannelScheduler(z)
+        val film = MediaItem("f", "Film", MediaType.MOVIE, duration = 100)
+        val blocks = s.dayBlocks(1, listOf(film, film.copy(id = "g", title = "Other")), false, noon)
+        assertEquals(start, blocks.first().startUnix)
+        assertEquals(start + 86400, blocks.last().endUnix)
     }
 }

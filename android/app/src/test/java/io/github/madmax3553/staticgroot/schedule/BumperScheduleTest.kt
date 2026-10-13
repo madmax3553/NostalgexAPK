@@ -97,21 +97,33 @@ class BumperScheduleTest {
         assertTrue(blocks.all { it.endUnix > it.startUnix })
     }
 
-    @Test fun aFilmIsNotStartedWhenMidnightWouldCutMostOfItOff() {
-        // Ten-minute filler items, then a 100 minute film that would start 15 minutes before midnight.
+    @Test fun aFilmIsNeverCutByTheEndOfTheDay() {
+        // Ten-minute filler items, then a 100 minute film that would start 15 minutes before the day ends.
         val shorts = (0 until 143).map { Block(item("s$it", 10, MediaType.MOVIE), 0, 600) }
         val big = Block(item("big", 100, MediaType.MOVIE), 0, 6000)
         val blocks = DailyPacker.withBumpers(shorts + big, 0)
         val film = blocks.filter { !it.isBumper && it.item.id == "big" }
-        val shown = film.sumOf { it.durationSeconds }
-        assertTrue("film must show whole or not at all, showed $shown s", film.isEmpty() || shown >= 0.75 * 6000)
+        // Shown whole (both halves) or not at all.
+        assertTrue(film.isEmpty() || film.sumOf { it.durationSeconds } == 6000L)
         blocks.zipWithNext().forEach { (a, b) -> assertEquals(a.endUnix, b.startUnix) }
         assertEquals(86400L, blocks.last().endUnix)
     }
 
-    @Test fun aShorterProgrammeIsPulledForwardIntoTheLastSlot() {
+    @Test fun noProgrammeIsCutAtTheEndOfTheDayWhateverTheLengths() {
+        for (len in listOf(22, 47, 95, 140)) {
+            val pool = (0 until 60).map { Block(item("p$it", len, MediaType.MOVIE), 0, len * 60L) }
+            val blocks = DailyPacker.withBumpers(pool, 0)
+            val last = blocks.last { !it.isBumper }
+            assertTrue("len=$len ends ${last.endUnix}", last.endUnix <= 86400L)
+            val tail = blocks.takeLastWhile { it.isBumper || it.item.id == last.item.id }.filter { !it.isBumper }
+            assertEquals("len=$len last programme must be whole", len * 60L, tail.sumOf { it.durationSeconds })
+            assertEquals(86400L, blocks.last().endUnix)
+        }
+    }
+
+    @Test fun fitsDayNeedsTheWholeProgramme() {
         assertTrue(DailyPacker.fitsDay(Block(item("a", 20, MediaType.MOVIE), 0, 0), 86400 - 1500, 86400))
-        assertFalse(DailyPacker.fitsDay(Block(item("b", 100, MediaType.MOVIE), 0, 0), 86400 - 900, 86400))
-        assertTrue(DailyPacker.fitsDay(Block(item("c", 100, MediaType.MOVIE), 0, 0), 86400 - 4800, 86400))
+        assertFalse(DailyPacker.fitsDay(Block(item("b", 100, MediaType.MOVIE), 0, 0), 86400 - 6000, 86400))
+        assertTrue(DailyPacker.fitsDay(Block(item("c", 100, MediaType.MOVIE), 0, 0), 86400 - 6060, 86400))
     }
 }

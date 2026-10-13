@@ -3,6 +3,39 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (broadcast day runs 03:00 to 03:00)
+
+**Why.** The previous entry stopped films starting near midnight, but that left a
+dead tail before midnight and a cut-off risk. The decision was to let programmes
+play through midnight and put the day change, with its long station breaks, at
+3 am when almost nobody watches.
+
+**Changed.** StaticGroot 0.1.26 (27). A day now runs from 03:00 to the next 03:00
+local time (`LocalDays`). It is still named by its calendar date, and the seed day
+number is still that date's midnight, so ordering stays comparable with Swift;
+only the window moved. 01:00 on the 13th belongs to the 12th. Generation, the
+published-day lookup and the scheduler all use the new boundary. The end-of-day
+rule is now strict: a programme starts only if it airs whole (with its mid break)
+before 03:00, judged against the latest a break could push its start and checked
+again against the real start; otherwise a later one that fits is pulled forward,
+and failing that the day ends on a station break. The earlier 75 and 50 percent
+allowances are gone.
+
+**Measured after force regenerate (generation 7, 210 channel-days with content).**
+Every day starts at 03:00. Last programme cut at the day end: 0 (it was 58 under
+the looser rule). Days with a programme running across midnight: 148. Cost: the
+day now ends on a long break. Of the 210 days, 124 end on a break over 30 minutes,
+68 over 60 and the longest is 120 minutes (median 38). Breaks between programmes
+over 10 minutes: 4 of 3,958, up from 1 of 4,056, not investigated.
+
+**Notes.** The change is a relabel of where the layout starts, so the Swift
+golden vectors, which pass a day start in, are unaffected. Days published under the
+old midnight boundary do not line up with the new one, so a force regenerate is
+needed once after installing; the test setup was regenerated. Other TVs must
+restart. A day in the DST changeover is 23 or 25 hours long, which the packer
+already ignored. The long end-of-day fill is a trade the user chose; a smaller
+pool (one long film) gets the longest ones.
+
 ## 2026-10-12 (films cut off at midnight)
 
 **Measured.** Channel 14 on 12 and 13 October ended its day with a film starting

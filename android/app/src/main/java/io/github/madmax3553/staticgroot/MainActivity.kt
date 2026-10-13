@@ -308,12 +308,12 @@ class MainActivity : Activity() {
             runOnUiThread { status.text = "Loading published programmes…" }
             shared.publishCatalog(items)
             val lookup = items.associateBy { it.id }
-            val startDate = java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(stationZone).toLocalDate()
+            val startDate = io.github.madmax3553.staticgroot.schedule.LocalDays.broadcastDate(clock.nowEpochSeconds, stationZone)
             val force = intent.getBooleanExtra("force_regenerate", false)
             val candidates = ArrayList<Triple<Int, String, List<io.github.madmax3553.staticgroot.schedule.Block>>>()
             for (offset in 0L..2L) {
                 val date = startDate.plusDays(offset)
-                val start = date.atStartOfDay(stationZone).toEpochSecond()
+                val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
                 val locked = HashSet<Int>()
                 val day = channels.associate { ch ->
                     val existing = if (force) null else shared.existing(ch, date.toString(), lookup)
@@ -329,7 +329,7 @@ class MainActivity : Activity() {
             if (force) shared.regenerate(candidates)
             for ((id, dayKey, proposed) in candidates) {
                 val ch = channels.first { it.id == id }
-                val start = java.time.LocalDate.parse(dayKey).atStartOfDay(stationZone).toEpochSecond()
+                val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(java.time.LocalDate.parse(dayKey), stationZone)
                 val saved = shared.publish(ch, dayKey, proposed, lookup)
                 AppSession.scheduler!!.installPublished(id, start, saved)
             }
