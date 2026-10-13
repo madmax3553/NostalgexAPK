@@ -3,6 +3,30 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (green picture on Dolby Vision files)
+
+**Reported.** A tester-side report that Demolition Man plays green.
+
+**Measured.** The file is 4K HEVC Main 10 with a Dolby Vision profile 8.1 record
+(ffprobe on the media host), direct played. On the test TV (MediaTek) the player
+opened `OMX.dolby.vision.dvhe.st.decoder` for it. A green picture from that
+decoder on profile 8 content is a known symptom; the cause on this TV is not
+isolated beyond "it uses the Dolby decoder".
+
+**Changed.** `VideoDecoderSelector` answers a Dolby Vision request with the plain
+HEVC decoders and drops Dolby-named decoders from HEVC requests, falling back to
+the original list when nothing else exists. Profile 8 and 7 keep a normal HEVC
+base layer, so they play without the Dolby enhancement. Four unit tests cover the
+selection rule. After the change the player opened `OMX.MTK.VIDEO.DECODER.HEVC`.
+
+**Not verified.** That Demolition Man itself now looks right: the channel on
+screen at the time of the check was not that file, so only the decoder choice was
+confirmed, not the picture. Profile 5 files (no compatible base layer) would still
+look wrong and are not handled; they would need a server transcode.
+
+**Next.** Tune Demolition Man (channels 73 or 13) and report whether the picture is
+fixed.
+
 ## 2026-10-12 (service deployed, station break audit)
 
 **Shipped.** Companion image `staticgroot-schedules:0.1.22` replaced 0.1.19 on

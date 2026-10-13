@@ -25,7 +25,15 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
     private val http = DefaultHttpDataSource.Factory()
         .setConnectTimeoutMs(10000).setReadTimeoutMs(15000)
         .setDefaultRequestProperties(AppSession.client?.playbackHeaders().orEmpty())
-    val player = ExoPlayer.Builder(context)
+    val player = ExoPlayer.Builder(context, object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+        override fun buildVideoRenderers(context: Context, extensionRendererMode: Int,
+            mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector, enableDecoderFallback: Boolean,
+            eventHandler: Handler, eventListener: androidx.media3.exoplayer.video.VideoRendererEventListener,
+            allowedVideoJoiningTimeMs: Long, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>) {
+            super.buildVideoRenderers(context, extensionRendererMode, VideoDecoderSelector, enableDecoderFallback,
+                eventHandler, eventListener, allowedVideoJoiningTimeMs, out)
+        }
+    })
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http)).build()
     private val handler = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadExecutor()
