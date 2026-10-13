@@ -24,7 +24,11 @@ object DeviceProfiles {
             DirectPlayProfile("mp4,m4v,mov,mkv", "Video", if (hevc) "h264,hevc" else "h264", AUDIO),
         ),
         TranscodingProfiles = listOf(
-            TranscodingProfile("mp4", "Video", "h264", AUDIO, "Streaming", "6", "hls", settings.maxHeight),
+            // HEVC first when the TV decodes it: a file with HEVC video and an audio track the TV
+            // cannot play (TrueHD, DTS-HD) then gets its video copied and only the audio converted.
+            // With H.264 alone the server re-encodes 4K video in software to change the audio,
+            // measured at 0.008x real time on a 4 core server.
+            TranscodingProfile("mp4", "Video", if (hevc) "hevc,h264" else "h264", AUDIO, "Streaming", "6", "hls", settings.maxHeight),
         ),
     )
 }

@@ -123,7 +123,7 @@ class JellyfinClientTest {
     fun hevcIsAdvertisedOnlyWhenTheDeviceCanDecodeIt() {
         assertEquals("h264", DeviceProfiles.forDevice(false).DirectPlayProfiles.single().VideoCodec)
         assertEquals("h264,hevc", DeviceProfiles.forDevice(true).DirectPlayProfiles.single().VideoCodec)
-        assertEquals("h264", DeviceProfiles.forDevice(true).TranscodingProfiles.single().VideoCodec)
+        assertEquals("hevc,h264", DeviceProfiles.forDevice(true).TranscodingProfiles.single().VideoCodec)
     }
 
     // -- Libraries --------------------------------------------------------------------
@@ -276,6 +276,14 @@ class JellyfinClientTest {
         assertEquals(100_000_000, StreamQuality.DEFAULT.maxBitrate)
         assertEquals(StreamQuality.AUTO, StreamQuality.fromId("nonsense"))
         assertEquals(StreamQuality.LOW, StreamQuality.fromId("low"))
+    }
+
+    @Test
+    fun hevcTvsMayReceiveCopiedHevcInTheTranscodeSoOnlyAudioIsConverted() {
+        val hevc = DeviceProfiles.forDevice(hevc = true).TranscodingProfiles.single().VideoCodec
+        val noHevc = DeviceProfiles.forDevice(hevc = false).TranscodingProfiles.single().VideoCodec
+        assertEquals("hevc,h264", hevc)
+        assertEquals("h264", noHevc)
     }
 
     @Test

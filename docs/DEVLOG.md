@@ -3,6 +3,28 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (watchdog killed streams that had started)
+
+**Measured.** A 4K HEVC remux with TrueHD and DTS-HD audio (about 84 Mbps) failed
+repeatedly on the test TV. Each log showed the same shape: first frame at 26 to
+29 seconds, a brief rebuffer, then the stall watchdog stopped playback and recorded
+a failure. Cause: the watchdog measured 30 seconds from the start of the tune, not
+from the start of the buffering, so any rebuffer after a slow start counted as a
+stalled stream. This is a timing bug in the watchdog, not a race.
+
+**Changed.** `StallWatch`: before the first frame the limit runs from the tune;
+afterwards from when the current buffering stretch began. Three unit tests.
+
+**Also found.** That file cannot direct play whatever the bitrate cap: its audio
+(TrueHD, DTS-HD) is not in the device profile's audio list, so Jellyfin always
+transcodes. With HEVC allowed in the transcoding profile the video is copied and
+only audio converted, but the first frame still took 22 to 28 seconds on the
+server. The "retry as direct play" therefore resolves as a transcode again for
+such files and only costs another start. Not fixed: skipping the retry when the
+source has no direct-playable audio.
+
+**Not verified.** That the file now plays through on the TV.
+
 ## 2026-10-12 (stream quality ladder, 100 Mbps baseline)
 
 **Why.** The 20 Mbps streaming cap was a placeholder (its own comment said "not

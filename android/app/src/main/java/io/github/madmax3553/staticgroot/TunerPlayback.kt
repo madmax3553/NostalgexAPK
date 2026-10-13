@@ -67,6 +67,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
     /** Which file of a disc-stacked movie is loaded, and where it begins in the whole movie. */
     /** Items whose transcode did not start, retried as direct play. Per process, so a restart tries the transcode again. */
     private val directItems = HashSet<String>()
+    /** When the current buffering stretch began, 0 when not buffering. A stall is measured from here once frames have played. */
+    private var bufferingSince = 0L
     private var partIndex = 0
     private var partStartSeconds = 0L
 
@@ -137,6 +139,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             }
             override fun onPlaybackStateChanged(state: Int) {
                 Log.i("StaticGroot", "VIDEO state=$state positionMs=${player.currentPosition}")
+                bufferingSince = if (state == Player.STATE_BUFFERING) System.currentTimeMillis() else 0L
                 if (state == Player.STATE_BUFFERING) status("BUFFERING…")
                 if (state == Player.STATE_READY && firstFrame) status("")
                 if (state == Player.STATE_ENDED) {
@@ -256,6 +259,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         partIndex = part
         partStartSeconds = partStart
         firstFrame = false
+        bufferingSince = 0
         learningResolution = null
         sampleStart = 0
         observationSent = false
@@ -340,7 +344,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             if (!active || released) return
             if (paused) { handler.postDelayed(this, 1000); return }
             if (!pending && player.playbackState == Player.STATE_BUFFERING &&
-                System.currentTimeMillis() - startedAt > 30000) {
+                StallWatch.stalled(firstFrame, System.currentTimeMillis() - startedAt,
+                    if (bufferingSince > 0) System.currentTimeMillis() - bufferingSince else 0)) {
                 reportObservation("failure")
                 player.stop()
                 endSession()
