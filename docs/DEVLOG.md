@@ -3,6 +3,28 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (commercials fill long breaks)
+
+**Why.** With the day ending at 03:00, 68 of 210 test days end on a break over an
+hour. A break played each commercial at most once, so a long break would run the
+Commercials library once and then sit on the station card.
+
+**Changed.** StaticGroot 0.1.27 (28). `CommercialClips.fit` keeps the first round
+as before (each clip once, so ordinary breaks never repeat), then continues in
+reshuffled rounds with no clip twice in a row until the break is full, leaving
+the 10 second ident. Capped at 480 clips a break. A one-clip library still plays
+once. Two unit tests: a 1 hour break is filled to within 30 seconds with no
+back-to-back repeats.
+
+**Not verified.** Playback of a long break on the TV: no break that long was on
+air to watch. Each clip is its own PlaybackInfo request and server session, so a
+two hour break means a few hundred of them; load on the media server and the
+ads' effect on the stall watchdog are unmeasured. The size of the Commercials
+library on the test server was not checked.
+
+**Next.** Tune a channel into its end-of-day break (around 02:00 to 03:00) and
+watch a few clips change; check the server log for session churn.
+
 ## 2026-10-12 (broadcast day runs 03:00 to 03:00)
 
 **Why.** The previous entry stopped films starting near midnight, but that left a

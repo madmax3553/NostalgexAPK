@@ -18,4 +18,20 @@ class CommercialClipsTest {
         assertEquals(listOf("a", "b"), CommercialClips.fit(clips, 60).map { it.id })
         assertTrue(CommercialClips.fit(clips, 10).isEmpty())
     }
+
+    @Test fun aLongBreakRepeatsTheLibraryWithoutBackToBackRepeatsAndFillsTheTime() {
+        val clips = listOf(CommercialClip("a", "A", 30), CommercialClip("b", "B", 30), CommercialClip("c", "C", 15))
+        val fit = CommercialClips.fit(clips, 3600, java.util.Random(7))
+        assertTrue("only ${fit.size}", fit.size > 3 * 10)
+        assertEquals(clips.map { it.id }, fit.take(3).map { it.id })
+        fit.zipWithNext().forEach { (x, y) -> assertNotEquals(x.id, y.id) }
+        val total = fit.sumOf { it.durationSeconds }
+        assertTrue(total <= 3590)
+        assertTrue("left ${3590 - total}s unfilled", 3590 - total < 30)
+    }
+
+    @Test fun aSingleClipLibraryPlaysOnceBecauseItCannotAvoidARepeat() {
+        assertEquals(1, CommercialClips.fit(listOf(CommercialClip("a", "A", 30)), 3600).size)
+        assertTrue(CommercialClips.fit(emptyList(), 3600).isEmpty())
+    }
 }
