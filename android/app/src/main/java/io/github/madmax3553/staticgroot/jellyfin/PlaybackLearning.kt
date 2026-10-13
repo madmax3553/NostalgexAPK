@@ -2,7 +2,7 @@ package io.github.madmax3553.staticgroot.jellyfin
 
 import kotlinx.serialization.Serializable
 
-@Serializable data class PlaybackSettings(val maxBitrate: Int = 20_000_000, val maxHeight: Int = 2160)
+@Serializable data class PlaybackSettings(val maxBitrate: Int = StreamQuality.DEFAULT.maxBitrate, val maxHeight: Int = 2160)
 @Serializable data class PlaybackObservation(val itemId: String, val sourceFingerprint: String,
     val deviceProfile: String, val outcome: String, val settings: PlaybackSettings,
     val startupMs: Long, val playedMs: Long, val wallMs: Long, val encoderSpeed: Double? = null)

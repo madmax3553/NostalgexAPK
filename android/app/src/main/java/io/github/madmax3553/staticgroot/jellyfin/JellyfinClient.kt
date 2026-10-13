@@ -36,6 +36,8 @@ class JellyfinClient(
     private val json = Json { ignoreUnknownKeys = true }
     private val playbackJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val learnedCache = java.util.concurrent.ConcurrentHashMap<String, PlaybackSettings>()
+    /** The viewer's chosen rung. Set by the guide from DisplaySettings, and when they change it. */
+    @Volatile var streamQuality: StreamQuality = StreamQuality.DEFAULT
     private val hevc by lazy { DeviceProfiles.supportsHevc() }
     fun invalidateLearnedPlayback(itemId: String, source: String, device: String) {
         learnedCache.remove("$itemId|$source|$device")
@@ -148,7 +150,8 @@ class JellyfinClient(
         // forceDirect lifts the bitrate cap so the server offers the file itself instead of a
         // transcode it cannot produce fast enough. It also skips learned settings, which came
         // from the transcode path that just failed.
-        var settings = if (forceDirect) PlaybackSettings(maxBitrate = DIRECT_PLAY_BITRATE) else PlaybackSettings()
+        val cap = streamQuality.settings()
+        var settings = if (forceDirect) cap.copy(maxBitrate = DIRECT_PLAY_BITRATE) else cap
         var info = negotiate(settings)
         val source = PlaybackResolver.pickSource(info, mediaSourceId)
         // No freshness facts means no reusable record. Do not assume an item ID implies
@@ -159,9 +162,9 @@ class JellyfinClient(
         val shared = io.github.madmax3553.staticgroot.AppSession.sharedStation
         if (fingerprint != null && shared != null && !forceDirect) {
             val key = "$itemId|$fingerprint|$deviceClass"
-            val preferred = learnedCache[key] ?: runCatching {
+            val preferred = (learnedCache[key] ?: runCatching {
                 shared.learnedPlayback(itemId, fingerprint, deviceClass).preferred
-            }.getOrNull()?.also { learnedCache[key] = it }
+            }.getOrNull()?.also { learnedCache[key] = it })?.let { StreamQuality.clamp(it, cap) }
             if (preferred != null && preferred != settings) {
                 runCatching { stopPlayback(info.PlaySessionId) }
                 settings = preferred

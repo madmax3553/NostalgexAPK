@@ -3,6 +3,33 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (stream quality ladder, 100 Mbps baseline)
+
+**Why.** The 20 Mbps streaming cap was a placeholder (its own comment said "not
+measured"), not a decision. It sent every high-bitrate file, including UHD
+remuxes up to about 100 Mbps, to a server transcode that a weak transcoder cannot
+sustain. tvOS tops out at 40 Mbps, which would not have helped a 90 Mbps file.
+
+**Changed.** StaticGroot 0.1.24 (25). `StreamQuality` ladder: Auto 100 Mbps and 4K
+(the default), High 12 Mbps and 1080p, Medium 4 and 720p, Low 1.5 and 480p. The
+lower rungs are the tvOS numbers; the top rung is Android's own. Picker in
+Settings, saved on the device, applied by retuning the current channel. The rung
+sets MaxStreamingBitrate and the transcode height in PlaybackInfo. A learned
+setting from the shared service is clamped to the chosen rung, so a remembered
+200 Mbps direct-play result cannot override a viewer who picked High. The direct
+play retry from the previous entry keeps the chosen height and lifts only the
+bitrate.
+
+**Verified.** Android tests (client requests per rung, clamp, retry) and lint
+pass. On the test TV a stream resolved as direct play and started in about 2
+seconds. Not checked on the TV: the picker itself, and the 90 Mbps remux
+direct-playing up front without the 30 second retry.
+
+**Not done.** No automatic step-down: tvOS Auto steps quality down when the
+connection cannot keep up; here a stall still only triggers the one direct play
+retry. Only the rung the viewer picks applies. Direct playing about 100 Mbps over
+Wi-Fi is unmeasured.
+
 ## 2026-10-12 (4K remux fails to load: transcode too slow)
 
 **Measured.** A 65 GB 4K Dolby Vision profile 7 remux (about 90 Mbps, FLAC) failed

@@ -238,9 +238,44 @@ class JellyfinClientTest {
         client.resolvePlayback("item1")
         client.resolvePlayback("item1", forceDirect = true)
         val normal = http.calls[0].body!!; val forced = http.calls[1].body!!
-        assertTrue(normal.contains("\"MaxStreamingBitrate\":20000000"))
+        assertTrue(normal.contains("\"MaxStreamingBitrate\":100000000"))
         assertTrue(forced.contains("\"MaxStreamingBitrate\":${JellyfinClient.DIRECT_PLAY_BITRATE}"))
         assertTrue(forced.contains("\"MaxStaticBitrate\":${JellyfinClient.DIRECT_PLAY_BITRATE}"))
+    }
+
+    @Test
+    fun theChosenRungSetsTheCapAndTheTranscodeHeight() {
+        val http = FakeHttp(mapOf("/PlaybackInfo" to """{"MediaSources":[{"Id":"m","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""))
+        val client = JellyfinClient(serverUrl, http, deviceId, "tok", "u1")
+        client.streamQuality = StreamQuality.HIGH
+        client.resolvePlayback("item1")
+        val body = http.calls.single().body!!
+        assertTrue(body.contains("\"MaxStreamingBitrate\":12000000"))
+        assertTrue(body.contains("\"MaxHeight\":1080"))
+        client.streamQuality = StreamQuality.LOW
+        client.resolvePlayback("item1")
+        assertTrue(http.calls[1].body!!.contains("\"MaxStreamingBitrate\":1500000"))
+    }
+
+    @Test
+    fun forceDirectKeepsTheChosenHeightButLiftsTheBitrate() {
+        val http = FakeHttp(mapOf("/PlaybackInfo" to """{"MediaSources":[{"Id":"m","SupportsDirectPlay":true}],"PlaySessionId":"s"}"""))
+        val client = JellyfinClient(serverUrl, http, deviceId, "tok", "u1")
+        client.streamQuality = StreamQuality.MEDIUM
+        client.resolvePlayback("item1", forceDirect = true)
+        val body = http.calls.single().body!!
+        assertTrue(body.contains("\"MaxStreamingBitrate\":${JellyfinClient.DIRECT_PLAY_BITRATE}"))
+        assertTrue(body.contains("\"MaxHeight\":720"))
+    }
+
+    @Test
+    fun aLearnedSettingNeverExceedsTheChosenRung() {
+        val cap = StreamQuality.HIGH.settings()
+        assertEquals(cap, StreamQuality.clamp(PlaybackSettings(100_000_000, 2160), cap))
+        assertEquals(PlaybackSettings(4_000_000, 720), StreamQuality.clamp(PlaybackSettings(4_000_000, 720), cap))
+        assertEquals(100_000_000, StreamQuality.DEFAULT.maxBitrate)
+        assertEquals(StreamQuality.AUTO, StreamQuality.fromId("nonsense"))
+        assertEquals(StreamQuality.LOW, StreamQuality.fromId("low"))
     }
 
     @Test

@@ -17,4 +17,8 @@ class DisplaySettings(context: Context) {
     var captionsEnabled: Boolean
         get() = prefs.getBoolean("captions_enabled", false)
         set(value) { prefs.edit().putBoolean("captions_enabled", value).apply() }
+
+    var streamQuality: io.github.madmax3553.staticgroot.jellyfin.StreamQuality
+        get() = io.github.madmax3553.staticgroot.jellyfin.StreamQuality.fromId(prefs.getString("stream_quality", null))
+        set(value) { prefs.edit().putString("stream_quality", value.id).apply() }
 }

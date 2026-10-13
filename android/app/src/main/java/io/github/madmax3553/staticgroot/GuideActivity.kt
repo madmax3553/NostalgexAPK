@@ -122,6 +122,7 @@ class GuideActivity : Activity() {
         }, { showInfo() })
         video.player = playback.player
         playback.setCaptions(displaySettings.captionsEnabled)
+        AppSession.client?.streamQuality = displaySettings.streamQuality
         root.post { layoutTuner() }
         focused = grid.channels.firstOrNull { it.id == AppSession.lastChannelId }
             ?: grid.channels.firstOrNull { it.pool.isNotEmpty() } ?: grid.channels.firstOrNull()
@@ -338,6 +339,10 @@ class GuideActivity : Activity() {
             }
         })
         content.addView(Button(this).apply {
+            text = "Stream quality: ${displaySettings.streamQuality.label}"
+            setOnClickListener { showStreamQuality(this) }
+        })
+        content.addView(Button(this).apply {
             text = "Playback controls"
             setOnClickListener { showPlaybackControls() }
         })
@@ -406,6 +411,23 @@ class GuideActivity : Activity() {
             }
         }
         dialog.show()
+    }
+
+    /** Picks a rung of the quality ladder. Applies to the next stream, so the one playing is retuned. */
+    private fun showStreamQuality(button: Button) {
+        val levels = io.github.madmax3553.staticgroot.jellyfin.StreamQuality.entries
+        val labels = levels.map { "${it.label}\n${it.detail}" }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Stream quality")
+            .setSingleChoiceItems(labels, levels.indexOf(displaySettings.streamQuality)) { dialog, which ->
+                val chosen = levels[which]
+                if (chosen != displaySettings.streamQuality) {
+                    displaySettings.streamQuality = chosen
+                    AppSession.client?.streamQuality = chosen
+                    button.text = "Stream quality: ${chosen.label}"
+                    playback.channel?.let { playback.tune(it, true) }
+                }
+                dialog.dismiss()
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun showPlaybackControls() {
