@@ -65,7 +65,7 @@ object TitleTokens {
 object LibraryChannelPlanner {
 
     // Franchise rules
-    private const val MIN_FRANCHISE_MINUTES = 300
+    private const val MIN_FRANCHISE_MINUTES = 600
     private const val MIN_FRANCHISE_ITEMS = 4
     private const val MAX_PREFIX_WORDS = 5
     // Series rules
@@ -85,10 +85,13 @@ object LibraryChannelPlanner {
         "my", "me", "i", "you", "it", "we", "no", "not", "by", "from", "or", "this", "that")
     private val ROMAN = Regex("^(ii|iii|iv|v|vi|vii|viii|ix|x)$")
 
-    /** Genres that never get a generated channel: kids and reality shelves, and seasonal horror. */
+    /** Genres that never get a generated channel: kids and reality shelves, seasonal horror, and genres too broad to mean anything. */
     private val SKIP_GENRES = setOf("animation", "animated", "family", "kids", "children", "documentary", "reality",
         "talk show", "talk", "news", "game show", "soap", "music", "musical", "horror", "holiday", "christmas",
-        "short", "tv movie", "sport", "sports")
+        "short", "tv movie", "sport", "sports",
+        // Too broad to be a channel: they hold most of a library and the fixed lineup already
+        // covers them (DRAMA TV, LOL and others), so a generated one only repeats those.
+        "drama", "comedy")
 
     private val GENRE_NAMES = mapOf(
         "science fiction" to "SCI-FI", "sci-fi" to "SCI-FI", "sci-fi & fantasy" to "SCI-FI",

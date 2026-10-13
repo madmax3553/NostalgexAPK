@@ -62,7 +62,7 @@ class LibraryChannelPlannerTest {
 
     @Test
     fun aSingleWordFranchiseNeedsASequelMarker() {
-        val rocky = listOf("Rocky", "Rocky II", "Rocky III", "Rocky IV", "Rocky V").map { movie(it) }
+        val rocky = listOf("Rocky", "Rocky II", "Rocky III", "Rocky IV", "Rocky V", "Rocky VI").map { movie(it) }
         assertEquals(listOf("ROCKY"), names(plan(rocky)))
         val coincidence = listOf("Black Swan", "Black Panther", "Black Hawk Down", "Black Mass").map { movie(it) }
         assertEquals(emptyList<String>(), names(plan(coincidence)))
@@ -70,24 +70,34 @@ class LibraryChannelPlannerTest {
 
     @Test
     fun aTwoWordPhraseNeedsFourTitlesOrAMarker() {
-        val four = listOf("Harry Potter and the First", "Harry Potter and the Second", "Harry Potter and the Third", "Harry Potter and the Fourth").map { movie(it) }
+        val four = listOf("Harry Potter and the First", "Harry Potter and the Second", "Harry Potter and the Third", "Harry Potter and the Fourth", "Harry Potter and the Fifth", "Harry Potter and the Sixth").map { movie(it) }
         assertEquals(listOf("HARRY POTTER"), names(plan(four)))
         val three = listOf("Mad Dog One", "Mad Dog Two", "Mad Dog Three").map { movie(it) }
         assertEquals(emptyList<String>(), names(plan(three)))
-        val marked = listOf("Toy Story", "Toy Story 2", "Toy Story 3", "Toy Story 4").map { movie(it, minutes = 120) }
+        val marked = listOf("Toy Story", "Toy Story 2", "Toy Story 3", "Toy Story 4", "Toy Story 5", "Toy Story 6").map { movie(it, minutes = 120) }
         assertEquals(listOf("TOY STORY"), names(plan(marked)))
     }
 
     @Test
     fun theShorterPhraseWinsWhenPhrasesNest() {
         val items = listOf("Pirates of the Caribbean: One", "Pirates of the Caribbean: Two", "Pirates of the Caribbean: Three",
-            "Pirates of the Caribbean: Four").map { movie(it, minutes = 140) }
+            "Pirates of the Caribbean: Four", "Pirates of the Caribbean: Five").map { movie(it, minutes = 140) }
         assertEquals(listOf("PIRATES OF THE CARIBBEAN"), names(plan(items)))
     }
 
     @Test
     fun aFranchiseTooSmallToFillTimeIsSkipped() {
         val items = listOf("Tiny Saga", "Tiny Saga 2").map { movie(it, minutes = 90) }
+        assertEquals(emptyList<String>(), names(plan(items)))
+        // Four films of 100 minutes is under ten hours: it would repeat all day.
+        val four = listOf("Small Saga", "Small Saga 2", "Small Saga 3", "Small Saga 4").map { movie(it) }
+        assertEquals(emptyList<String>(), names(plan(four)))
+    }
+
+    @Test
+    fun broadGenresLikeDramaAndComedyNeverGetAChannel() {
+        val items = show("Drama One", 40, listOf("Drama")) + show("Drama Two", 40, listOf("Drama")) +
+            (1..60).map { movie("Laugh$it", listOf("Comedy")) }
         assertEquals(emptyList<String>(), names(plan(items)))
     }
 

@@ -3,6 +3,31 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (planner tightened after the first TV run)
+
+**Measured.** First run on a test TV against a library of 2,656 items (5
+sections): the planner proposed SCREAM (10 items), a 4-item Rambo franchise, a
+1,409-episode DRAMA TV and an 808-episode SCI-FI TV. DRAMA TV duplicated the
+fixed DRAMA TV channel, and the overlap guard did not catch it because the fixed
+channel has exclusions. No Star Trek channel: that library does not hold enough.
+
+**Changed.** Drama and Comedy never get a generated genre channel (too broad,
+already covered). A franchise needs at least 600 minutes, not 300, so four short
+films no longer repeat all day. After this, the same library proposes SCREAM
+(10) and SCI-FI TV (133). The 600 minute and broad genre list are judgement
+from one library, not tuned across several.
+
+**Also.** When the service cannot register generated channels (HTTP 405 from the
+old image), the app now falls back to the static lineup less off-season
+bundles, instead of dropping the seasonal channels too. The service on the test
+setup is still the old image, so generated channels are not shown there yet.
+
+**Verified.** Android tests and lint pass; installed on the test TV (0.1.22).
+Enrichment did not run on that build: no TMDB key was configured.
+
+**Next.** Redeploy the service image so `/setup/channels` exists. Add TMDB and
+OMDb keys to `android/local.properties` and read the `ENRICHMENT delta` line.
+
 ## 2026-10-12 (library channels, one seasonal channel, guide wrap)
 
 **Shipped.** Nothing. StaticGroot 0.1.22 (23) builds and passes tests but has not
