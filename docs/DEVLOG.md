@@ -3,6 +3,50 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-12 (service deployed, station break audit)
+
+**Shipped.** Companion image `staticgroot-schedules:0.1.22` replaced 0.1.19 on
+the Jellyfin Docker host, same data volume and token. The volume was backed up
+to a tarball on the host first, and the previous container is kept stopped as
+`staticgroot-schedules-old` for rollback. The test TV then registered its
+generated channels through `POST /setup/channels` and published days for them.
+StaticGroot 0.1.23 (24) debug APK installed on the TV.
+
+**Measured.** Published days (530 channel-days, generation 3) before this
+change: station breaks were 13.8 percent of airtime. Between programmes: 5,282
+breaks, median 9 min, p90 16, p99 39, max 60; 213 of them 20 minutes or longer.
+Every one of those 213 ended on a :00 or :30 and followed a TV episode. Cause:
+TV starts snap to the next half hour (hourly for the first of a repeated show
+block), so a 35 to 50 minute episode waited for the next :00 or :30, and a
+55 to 62 minute episode plus the 30 second minimum rounded up to 30 or 60
+minutes. Movies were bounded by their quarter hour grid at 15. The long ones
+clustered on streaming-network channels, whose episodes run long.
+
+**Changed.** `StationTiming` caps a break at 10 minutes. The next programme
+tries its preferred grid (hourly for a show block), then the base grid (half
+hour for TV, quarter hour for movies), then the next 5 minute mark, and takes
+the first that waits 10 minutes or less. Programmes that end soon enough still
+land on the grid, so the schedule re-syncs. This is a deliberate reversal of the
+earlier "TV uses half hours regardless of wait length" test, which is rewritten.
+A repeated show block no longer forces an hourly start when that costs more than
+10 minutes. Android-only: tvOS has no station breaks.
+
+**Verified.** 230 Android tests pass, and one of them checks every possible end
+time in a day, for each media type and block mode, gives a break between 30
+seconds and 10 minutes. Lint passes. Not measured: the new break distribution
+on a real library. A replay of the published sequences through both rules
+overstated the old breaks (median 16 against the real 9, because block lengths
+are a crude proxy for movie versus TV), so no before and after comparison is
+claimed beyond the cap.
+
+**Half-done.** Published days are immutable, so nothing changes until a day is
+not yet published or the schedule is force regenerated from Settings, which makes
+a new generation (old ones are kept) and other TVs must restart. About 0.2
+percent of airtime is the fill from the last programme to midnight, up to 51
+minutes on 112 of 530 days; not changed.
+
+**Next.** Force regenerate on the test TV and re-measure from the service data.
+
 ## 2026-10-12 (planner tightened after the first TV run)
 
 **Measured.** First run on a test TV against a library of 2,656 items (5

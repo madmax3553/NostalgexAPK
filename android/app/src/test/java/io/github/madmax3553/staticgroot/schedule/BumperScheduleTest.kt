@@ -19,30 +19,58 @@ class BumperScheduleTest {
         blocks.zipWithNext().forEach { (a, b) -> assertEquals(a.endUnix, b.startUnix) }
     }
 
-    @Test fun tvUsesHalfHoursRegardlessOfWaitLength() {
-        assertEquals(3600L, StationTiming.nextStart(46 * 60, 0, nextType = MediaType.EPISODE))
-        assertEquals(3600L, StationTiming.nextStart(44 * 60, 0, nextType = MediaType.EPISODE))
-        assertEquals(3600L, StationTiming.nextStart(45 * 60 + 60, 0, nextType = MediaType.EPISODE))
+    @Test fun tvUsesHalfHoursWhenTheWaitIsShort() {
+        // 28 minutes in, the next half hour is 2 minutes away.
+        assertEquals(1800L, StationTiming.nextStart(28 * 60, 0, nextType = MediaType.EPISODE))
+        // 52 minutes in, the hour is 8 minutes away: still on the grid.
+        assertEquals(3600L, StationTiming.nextStart(52 * 60, 0, nextType = MediaType.EPISODE))
+        // Ending exactly on the half hour: 30 s of break pushes the next to :35, not a 30 minute wait.
+        assertEquals(2100L, StationTiming.nextStart(30 * 60, 0, nextType = MediaType.EPISODE))
     }
 
-    @Test fun aRepeatedShowBlockStartsHourlyButItsSecondEpisodeUsesHalfHours() {
-        val items = listOf(item("Earlier", 22), item("Same Show", 22),
-            item("Same Show", 22), item("Later", 22))
-        val blocks = DailyPacker.withBumpers(items.mapIndexed { i, media ->
+    @Test fun aLongWaitFallsBackToTheNextFiveMinuteMarkInsteadOfIdlingForHalfAnHour() {
+        // 46 minutes in: the hour is 14 minutes away, over the cap. 46:00 + 30 s -> 50:00.
+        assertEquals(3000L, StationTiming.nextStart(46 * 60, 0, nextType = MediaType.EPISODE))
+        // A 61 minute episode used to wait until 90:00 (29 minutes). Now 65:00.
+        assertEquals(3900L, StationTiming.nextStart(61 * 60, 0, nextType = MediaType.EPISODE))
+        // An hourly show-block start used to idle 35 minutes after a 25 minute episode. Not any more.
+        assertEquals(1800L, StationTiming.nextStart(25 * 60, 0, nextType = MediaType.EPISODE, startsRepeatedShowBlock = true))
+        // Close enough to the hour, it still opens on it.
+        assertEquals(3600L, StationTiming.nextStart(52 * 60, 0, nextType = MediaType.EPISODE, startsRepeatedShowBlock = true))
+    }
+
+    @Test fun noBreakEverExceedsTheCapPlusTheFineGridForAnyEndTime() {
+        for (type in MediaType.entries) for (block in listOf(false, true)) {
+            var end = 0L
+            while (end < 86400) {
+                val start = StationTiming.nextStart(end, 0, nextType = type, startsRepeatedShowBlock = block)
+                assertTrue("end=$end type=$type gap=${start - end}", start - end in 30..StationTiming.MAX_BREAK_SECONDS)
+                end += 37
+            }
+        }
+    }
+
+    @Test fun aRepeatedShowBlockOpensOnTheHourOnlyWhenThatCostsLittle() {
+        // 22 minute episodes: the hour is 38 minutes after the first one ends, over the cap, so the
+        // block opens on the half hour. Everything stays on the half-hour grid.
+        val items = listOf(item("Earlier", 22), item("Same Show", 22), item("Same Show", 22), item("Later", 22))
+        val starts = DailyPacker.withBumpers(items.mapIndexed { i, media ->
             Block(media, i * 1320L, (i + 1) * 1320L)
-        }, 0).filterNot { it.isBumper }
-        assertEquals(listOf(0L, 3600L, 5400L, 7200L), blocks.map { it.startUnix })
+        }, 0).filterNot { it.isBumper }.map { it.startUnix }
+        assertEquals(listOf(0L, 1800L, 3600L, 5400L), starts)
     }
 
     @Test fun singleShowSwitchDoesNotForceAnHourlyStart() {
         assertEquals(1800L, StationTiming.nextStart(1320, 0, nextType = MediaType.EPISODE))
-        assertEquals(3600L, StationTiming.nextStart(1320, 0, nextType = MediaType.EPISODE,
+        // The hour would be a 38 minute wait, so the block opens on the half hour instead.
+        assertEquals(1800L, StationTiming.nextStart(1320, 0, nextType = MediaType.EPISODE,
             startsRepeatedShowBlock = true))
     }
 
     @Test fun moviesUseTheNextQuarterHourIncludingMinimumIdent() {
         assertEquals(2700L, StationTiming.nextStart(44 * 60, 0))
-        assertEquals(4500L, StationTiming.nextStart(3600, 0))
+        // A film ending on the hour used to wait 15 minutes for :15. Over the cap, so :05.
+        assertEquals(3900L, StationTiming.nextStart(3600, 0))
         assertEquals(3600L, StationTiming.nextStart(3570, 0))
     }
 
@@ -54,7 +82,7 @@ class BumperScheduleTest {
         assertEquals(60L, blocks[1].durationSeconds)
         assertEquals(1380L, blocks[2].mediaOffsetSeconds)
         assertEquals(1380L, blocks[2].durationSeconds)
-        assertEquals(3600L, blocks[4].startUnix)
+        assertEquals(3000L, blocks[4].startUnix)
     }
 
     @Test fun joiningAfterTheMidBreakSeeksToContentNotCommercialTime() {
