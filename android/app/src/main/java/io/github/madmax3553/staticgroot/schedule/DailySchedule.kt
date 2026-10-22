@@ -68,7 +68,7 @@ object DailyPacker {
     /** Android station breaks: retain programme order and pad to local half-hour slots.
      * The bumper carries the following item for its coming-next card, never for playback.
      */
-    fun withBumpers(blocks: List<Block>, dayStart: Long, seconds: Long = 30): List<Block> {
+    fun withBumpers(blocks: List<Block>, dayStart: Long, seconds: Long = 30, channelId: Int = 0): List<Block> {
         require(seconds > 0)
         val end = dayStart + 86400
         val result = ArrayList<Block>()
@@ -134,7 +134,8 @@ object DailyPacker {
                 // A one-film library cannot alternate. A five-minute station break
                 // separates showings without the former hour-long padding.
                 val breakEnd = minOf(end, StationTiming.nextStart(cursor, dayStart,
-                    if (sameMovie) 300 else seconds, next.item.type, startsRepeatedShowBlock = startsShowBlock))
+                    if (sameMovie) 300 else seconds, next.item.type, startsRepeatedShowBlock = startsShowBlock,
+                    gridOffset = StationTiming.gridOffset(channelId)))
                 // The exact start is known now. A grid-aligned start can push a close fit past the end.
                 if (!fitsDay(next, breakEnd, end)) break
                 result.add(Block(next.item, cursor, breakEnd, isBumper = true))
@@ -324,7 +325,7 @@ class ChannelScheduler(
                 yesterdayAiredKeys = history.airedKeys(channelId, yKey),
                 yesterdayLastItemId = history.lastAired(channelId, yKey),
             )
-            val packed = DailyPacker.withBumpers(programmes, dayStart)
+            val packed = DailyPacker.withBumpers(programmes, dayStart, channelId = channelId)
             history.record(channelId, LocalDays.dayKey(unix, zone), packed.filterNot { it.isBumper }.map { it.item.id })
             packed
         }

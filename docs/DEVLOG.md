@@ -3,6 +3,62 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-22 (station breaks staggered across channels)
+
+**Why.** The ask: when a channel goes to a station break, another channel should
+still be showing a programme, so a viewer can switch away. Breaks end on one
+shared grid (:00 and :30 for TV, quarter hours for films), so channels with the
+same runtimes broke together. A first reading of the ask as "different ad clips
+per channel" was wrong; that measurement (random lineups share 10% of ad time
+at 131 clips) was dropped and nothing from it is in the code.
+
+**Changed.** StaticGroot 0.1.28 (29), committed but not released. Each channel's break grid is now shifted by
+`StationTiming.gridOffset(channelId)`: channel id mod 6, times 5 minutes. A
+channel's programmes then start on :05/:35 or :10/:40 and so on instead of
+:00/:30, and its breaks end there. The 30 second minimum break, the 10 minute cap
+and the 5 minute fallback grid are unchanged; they work from the shifted origin.
+Channel 0 keeps the old grid exactly. Swift has no station breaks, so there is
+no parity to keep.
+
+Measured with a throwaway harness (`BreakStaggerTest`, deleted after the run, so the
+table below cannot be reproduced from the repo): 131 synthetic channels (five runtime shapes:
+22 minute sitcoms, hour dramas, films, two mixes) packed by the real `DailyPacker`,
+share of channels on a break per minute, 04:00 to 02:00:
+
+| | one shared grid | 6 phases (shipped) | 30 phases of 1 min (not used) |
+|---|---|---|---|
+| median | 7.6% | 13.7% | 13.0% |
+| 95th percentile | 40.5% | 23.7% | 19.1% |
+| worst minute | 51.1% | 44.3% | 38.2% |
+| minutes with over half on break | 3 | 0 | 0 |
+
+The average share on break is about 13.5% either way, so the gain is flattening
+the spikes, not cutting break time. 1 minute phases flatten a little more but put
+programmes on :07 and :13, which was not worth it.
+
+**Not changed, on purpose.** Everything is still synchronised at the 03:00 day
+change: all channels open the day together and sit in an end-of-day break
+together (100% on break for the last 18 minutes at 03:00 in the same harness).
+That is the 03:00 decision from the previous entries. Fixing it needs programmes
+to cross the day boundary, which the day model does not allow.
+
+**Half-done.** Published days are immutable and are generated up to two days
+ahead, so days already published keep the old grid. The change appears as days
+are generated, or at once after a forced regenerate (`force_regenerate`).
+Other devices on the same station that still run 0.1.27 will publish old-grid
+days until they update.
+
+**Not verified.** The harness uses synthetic channels, not the real library or
+channels.json pools. `GenerationReshuffler` swaps equal-length runs between
+channels; with the grids shifted its runs start at different phases, and I did not
+exercise a real swap (the synthetic channels gave it zero swaps). Existing
+reshuffler tests pass. No new tests were kept for the stagger itself. The guide with off-grid start times was not looked at on a
+TV.
+
+**Next.** Regenerate on a real library and compare the guide against the
+numbers above; check a few swaps from the reshuffler keep days whole. CLAUDE.md gives the test command as `./gradlew -p android ...`, but
+the wrapper is `android/gradlew`.
+
 ## 2026-10-12 (commercials fill long breaks)
 
 **Why.** With the day ending at 03:00, 68 of 210 test days end on a break over an
