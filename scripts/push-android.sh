@@ -109,21 +109,31 @@ discover_lan_jellyfin() {
 }
 
 if [ "$DO_BUILD" -eq 1 ]; then
-  if JDK17="$(find_jdk17)"; then
+  DISCOVERED_URL="$(discover_lan_jellyfin)"
+  if [ -n "$DISCOVERED_URL" ]; then
+    echo "==> Discovered Jellyfin on LAN: $DISCOVERED_URL"
+  fi
+
+  if JDK17="$(find_jdk17)" && SDK_DIR="$(find_android_sdk)"; then
     export JAVA_HOME="$JDK17"
-  fi
-  if SDK_DIR="$(find_android_sdk)"; then
     export ANDROID_HOME="$SDK_DIR"
-  fi
-  if ! grep -q '^DEFAULT_JELLYFIN_URLS=' "$ROOT/android/local.properties" 2>/dev/null && [ -z "${DEFAULT_JELLYFIN_URLS:-}" ]; then
-    DISCOVERED_URL="$(discover_lan_jellyfin)"
-    if [ -n "$DISCOVERED_URL" ]; then
-      echo "==> Discovered Jellyfin on LAN: $DISCOVERED_URL"
+    if ! grep -q '^DEFAULT_JELLYFIN_URLS=' "$ROOT/android/local.properties" 2>/dev/null && [ -z "${DEFAULT_JELLYFIN_URLS:-}" ] && [ -n "$DISCOVERED_URL" ]; then
       export DEFAULT_JELLYFIN_URLS="$DISCOVERED_URL"
     fi
+    echo "==> Building debug APK"
+    "$ROOT/android/gradlew" -p "$ROOT/android" :app:assembleDebug
+  elif [ -f "$APK" ]; then
+    echo "==> Using existing APK at $APK"
+  elif [ -n "$DISCOVERED_URL" ]; then
+    HOST_ONLY="$(echo "$DISCOVERED_URL" | sed -E 's|^https?://([^:/]+).*|\1|')"
+    APK_URL="http://${HOST_ONLY}:8787/v1/apk"
+    APK="/tmp/staticgroot-debug.apk"
+    echo "==> No local JDK 17 / Android SDK; downloading prebuilt APK from $APK_URL"
+    curl -fsSL "$APK_URL" -o "$APK"
+  else
+    echo "ERROR: No local JDK 17 / Android SDK found and could not discover companion host on LAN." >&2
+    exit 1
   fi
-  echo "==> Building debug APK"
-  "$ROOT/android/gradlew" -p "$ROOT/android" :app:assembleDebug
 fi
 
 if [ ! -f "$APK" ]; then
