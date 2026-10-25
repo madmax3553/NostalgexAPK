@@ -110,8 +110,13 @@ class GuideActivity : Activity() {
             if (playback.channel?.id == ch.id && (playback.player.isPlaying || playback.entry?.block?.isBumper == true)) setFullscreen(true)
             else { playback.tune(ch, force = true); showInfo() }
         }, { settings.requestFocus() })
+        grid.displayTimeZone = displaySettings.displayTimeZone(AppSession.stationZone)
+        val nowInit = System.currentTimeMillis() / 1000
+        schedules = AppSession.channels.mapNotNull { ch -> AppSession.scheduleFor(ch, nowInit)?.let { ch.id to it } }.toMap()
+        grid.schedules = schedules
+        grid.windowStart = nowInit / 1800 * 1800
         grid.channels = AppSession.channels.sortedBy { it.number }.filter {
-            displaySettings.showOffAirChannels || it.pool.isNotEmpty()
+            displaySettings.showOffAirChannels || schedules[it.id]?.nowPlaying != null || it.pool.isNotEmpty()
         }
         root.addView(top)
         root.addView(grid)
@@ -125,7 +130,8 @@ class GuideActivity : Activity() {
         AppSession.client?.streamQuality = displaySettings.streamQuality
         root.post { layoutTuner() }
         focused = grid.channels.firstOrNull { it.id == AppSession.lastChannelId }
-            ?: grid.channels.firstOrNull { it.pool.isNotEmpty() } ?: grid.channels.firstOrNull()
+            ?: grid.channels.firstOrNull { schedules[it.id]?.nowPlaying != null || it.pool.isNotEmpty() }
+            ?: grid.channels.firstOrNull()
         focused?.let { grid.select(it.id) }
         grid.requestFocus()
     }
@@ -220,7 +226,9 @@ class GuideActivity : Activity() {
         }
         val now = System.currentTimeMillis() / 1000
         val block = scheduled?.nowPlaying
-        val format = SimpleDateFormat("h:mm a", Locale.getDefault())
+        val format = SimpleDateFormat("h:mm a", Locale.getDefault()).apply {
+            timeZone = displaySettings.displayTimeZone(AppSession.stationZone)
+        }
         if (block != null) {
             val remaining = ((block.endUnix - now).coerceAtLeast(0) + 59) / 60
             section("${format.format(Date(block.startUnix * 1000))} – ${format.format(Date(block.endUnix * 1000))}" +
@@ -343,6 +351,10 @@ class GuideActivity : Activity() {
             setOnClickListener { showStreamQuality(this) }
         })
         content.addView(Button(this).apply {
+            text = "Time zone: ${timeZoneSummary()}"
+            setOnClickListener { showTimeZone(this) }
+        })
+        content.addView(Button(this).apply {
             text = "Playback controls"
             setOnClickListener { showPlaybackControls() }
         })
@@ -430,6 +442,30 @@ class GuideActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
 
+    private fun timeZoneSummary(): String {
+        val chosen = displaySettings.timeZone
+        val resolved = displaySettings.resolveZoneId(AppSession.stationZone).id
+        return if (chosen == NorthAmericaTimeZone.AUTO) "Auto ($resolved)" else chosen.label
+    }
+
+    private fun showTimeZone(button: Button) {
+        val zones = NorthAmericaTimeZone.entries
+        val labels = zones.map { z ->
+            if (z == NorthAmericaTimeZone.AUTO) "Auto (${z.resolve(this, AppSession.stationZone).id})" else z.label
+        }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Time zone (North America)")
+            .setSingleChoiceItems(labels, zones.indexOf(displaySettings.timeZone)) { dialog, which ->
+                val chosen = zones[which]
+                if (chosen != displaySettings.timeZone) {
+                    displaySettings.timeZone = chosen
+                    grid.displayTimeZone = displaySettings.displayTimeZone(AppSession.stationZone)
+                    button.text = "Time zone: ${timeZoneSummary()}"
+                    showInfo()
+                }
+                dialog.dismiss()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
     private fun showPlaybackControls() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -493,19 +529,26 @@ class GuideActivity : Activity() {
 
     private fun showCompanionSettings() {
         val saved = io.github.madmax3553.staticgroot.schedule.CompanionSettings(this)
+        val defaultUrl = AppSession.client?.serverUrl?.let {
+            io.github.madmax3553.staticgroot.schedule.SharedStation.defaultUrl(it)
+        }.orEmpty()
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), 0, dp(20), 0) }
-        val url = EditText(this).apply { hint = "Service URL (http://host:8787)"; setText(saved.url); isSingleLine = true }
-        val key = EditText(this).apply {
-            hint = "Service key"; setText(saved.key); isSingleLine = true
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val enabled = CheckBox(this).apply {
+            text = "Sync schedule across devices (${defaultUrl.ifEmpty { "port 8787" }})"
+            isChecked = saved.enabled
         }
-        box.addView(url); box.addView(key)
-        box.addView(TextView(this).apply { text = "Use the same service and Jellyfin user on each TV. Clear URL to disable. Restart after saving." })
+        val url = EditText(this).apply {
+            hint = "Custom URL override (blank = $defaultUrl)"
+            setText(saved.url)
+            isSingleLine = true
+        }
+        box.addView(enabled); box.addView(url)
+        box.addView(TextView(this).apply { text = "Automatically connects to $defaultUrl using your Jellyfin server & user hash. Restart after saving." })
         val dialog = AlertDialog.Builder(this).setTitle("Shared schedules").setView(box)
             .setPositiveButton("Save", null).setNegativeButton("Cancel", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                try { saved.save(url.text.toString(), key.text.toString()); dialog.dismiss() }
+                try { saved.save(url.text.toString(), enabled.isChecked); dialog.dismiss() }
                 catch (e: IllegalArgumentException) { url.error = e.message }
             }
         }

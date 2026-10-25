@@ -3,6 +3,74 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-10-24 (automatic shared station discovery and lineup sync)
+
+**Why.** A second Android TV (Fire TV Stick, `AFTMA08C15`) showed a different
+channel lineup than the first TV. Inspection on device showed
+`staticgroot_companion.xml` had only the two empty EncryptedSharedPreferences
+keyset entries: the shared schedule service required typing a URL and a 24+
+character Bearer token on every TV, so the second device ran local scheduling
+(`files/day_history`). Even with the service connected, `MainActivity` dropped
+server-registered generated channels (`id >= 1,000,000`) that a second device did
+not also generate locally, published empty `blocks: []` days when a device with
+an empty pool launched first, and `GuideActivity.onCreate` filtered initial rows
+by local `pool.isNotEmpty()` rather than published schedules.
+
+**Shipped.** Companion image `staticgroot-schedules:0.1.29` deployed to the
+Jellyfin Docker host (retaining the `staticgroot-schedules` volume, with the
+previous container kept stopped as `staticgroot-schedules-old`). StaticGroot
+0.1.32 (33) debug APK built and installed on the Fire TV Stick.
+
+**Changed.**
+- `JellyfinDiscovery`: probes saved and `BuildConfig.DEFAULT_JELLYFIN_URLS`
+  (populated from git-ignored `android/local.properties` with LAN and Tailscale
+  addresses) and broadcasts Jellyfin's UDP discovery packet (`"who is
+  JellyfinServer?"` on port 7359). Pre-fills the sign-in screen automatically on
+  fresh installs and seamlessly switches a saved session between LAN and
+  Tailscale addresses on launch.
+- `SharedStation.defaultUrl` derives `http://<jellyfin-host>:8787` from the
+  signed-in Jellyfin server URL, and `CompanionSettings` enables shared station
+  sync by default with no manual URL or service key required. Station identity
+  remains the 64-character SHA-256 hash of `serverId|userId`. If port 8787 is
+  unreachable on launch, `MainActivity` logs a warning and falls back to local
+  scheduling instead of failing the launch.
+- `server/schedule-service.cjs` no longer requires a Bearer token by default
+  (unless `STATICGROOT_REQUIRE_TOKEN=1` is set) and allows a non-empty day
+  proposal to replace an earlier empty `blocks: []` file while keeping non-empty
+  published days immutable.
+- `MainActivity` keeps all enabled generated channels from the station's
+  `setup.json` in the runtime lineup even if the current device did not generate
+  them locally, skips redundant `POST /days` calls when a non-empty day was
+  already fetched by `GET /days`, and never publishes an empty block list.
+- `GuideActivity.onCreate` computes initial schedules before filtering rows so
+  channels with published programmes on the server are shown even when the local
+  pool is empty.
+- `NorthAmericaTimeZone` in `DisplaySettings`: on the Fire TV Stick, Amazon Fire
+  OS's `com.amazon.kindleautomatictimezone` writes the resolved timezone
+  (`America/Chicago`) to `Settings.Global` (`notifiedTimeZone` and
+  `atz_response_provider`) while leaving `persist.sys.timezone` at `GMT`, so
+  `ZoneId.systemDefault()` returned `GMT` even though the Fire TV home screen
+  showed the right local time. `NorthAmericaTimeZone.deviceZoneId` now reads
+  `notifiedTimeZone` / `atz_response_provider` when `ZoneId.systemDefault()` is
+  `GMT`/`UTC`. All TVs continue to play the same programme at the same Unix
+  timestamp (`AppSession.stationZone`), while each device's guide clock formats
+  in its own local timezone.
+
+- `scripts/push-android.sh`: builds the debug APK (auto-detecting JDK 17, the
+  Android SDK, and any LAN Jellyfin server via UDP port 7359 when
+  `android/local.properties` is absent), installs it over ADB to one or more
+  Android TV targets, whitelists `com.tailscale.ipn` from Android TV Doze and
+  background restrictions when Tailscale is installed, and launches
+  `MainActivity`.
+
+**Verified.** On launch, the Fire TV Stick automatically connected to port 8787
+on the Jellyfin host with zero manual settings, matched the existing station
+hash, uploaded its catalog, loaded the 366 published channel-day manifests across
+the three-day horizon, and updated `selection.json` in `GuideActivity`.
+
+**Next.** Run `./scripts/push-android.sh` from a LAN machine to update the first
+TV (`sony-xr-65x90l`) to 0.1.32 (33) and apply the Tailscale standby whitelist.
+
 ## 2026-10-22 (station breaks staggered across channels)
 
 **Why.** The ask: when a channel goes to a station break, another channel should

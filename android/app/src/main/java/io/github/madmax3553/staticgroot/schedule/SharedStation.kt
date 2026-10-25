@@ -13,15 +13,20 @@ import java.net.URLEncoder
 import io.github.madmax3553.staticgroot.jellyfin.LearnedPlayback
 import io.github.madmax3553.staticgroot.jellyfin.PlaybackObservation
 
-/** Companion URL and key are device-local, not bundled in the APK. */
+/**
+ * Companion settings. By default the companion service is auto-discovered on port 8787 of the
+ * signed-in Jellyfin host and identified by the station's SHA-256(serverId|userId) hash.
+ */
 class CompanionSettings(context: Context) {
     private val prefs = io.github.madmax3553.staticgroot.SecurePrefs.open(context, "staticgroot_companion")
+    val enabled get() = prefs.getBoolean("enabled", true)
     val url get() = prefs.getString("url", "").orEmpty()
-    val key get() = prefs.getString("key", "").orEmpty()
-    fun save(url: String, key: String) {
-        require(url.isBlank() || (url.startsWith("http://") || url.startsWith("https://")))
-        require(url.isBlank() || key.length >= 24) { "The service key must have at least 24 characters" }
-        prefs.edit().putString("url", url.trim().trimEnd('/')).putString("key", key).apply()
+    fun resolveUrl(jellyfinServerUrl: String): String =
+        url.ifBlank { SharedStation.defaultUrl(jellyfinServerUrl) }
+    fun save(url: String, enabled: Boolean = true) {
+        val trimmed = url.trim().trimEnd('/')
+        require(trimmed.isBlank() || (trimmed.startsWith("http://") || trimmed.startsWith("https://")))
+        prefs.edit().putBoolean("enabled", enabled).putString("url", trimmed).apply()
     }
 }
 
@@ -39,10 +44,10 @@ class CompanionSettings(context: Context) {
 @Serializable data class CatalogItem(val id: String, val title: String, val type: String, val seriesId: String?)
 @Serializable data class Catalog(val items: List<CatalogItem>)
 
-class SharedStation(private val base: String, key: String, stationId: String) {
+class SharedStation(val base: String, stationId: String) {
     private val http = HttpUrlJellyfinHttp()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val headers = mapOf("Authorization" to "Bearer $key", "Accept" to "application/json")
+    private val headers = mapOf("Accept" to "application/json")
     private val root = "$base/v1/stations/$stationId"
     private var generation = 0
     fun publishCatalog(items: List<MediaItem>) {
@@ -120,6 +125,17 @@ class SharedStation(private val base: String, key: String, stationId: String) {
     }
 
     companion object {
+        const val DEFAULT_PORT = 8787
+
+        /** Same host and scheme as the Jellyfin server, port 8787. */
+        fun defaultUrl(jellyfinServerUrl: String): String = runCatching {
+            val uri = java.net.URI(jellyfinServerUrl.trim())
+            val scheme = uri.scheme ?: "http"
+            val host = uri.host ?: return ""
+            val formattedHost = if (host.contains(":") && !host.startsWith("[")) "[$host]" else host
+            "$scheme://$formattedHost:$DEFAULT_PORT"
+        }.getOrDefault("")
+
         /** Same Jellyfin server and user produce the same station; addresses are never published as IDs. */
         fun stationId(serverId: String, userId: String): String = MessageDigest.getInstance("SHA-256")
             .digest("$serverId|$userId".toByteArray()).joinToString("") { "%02x".format(it) }

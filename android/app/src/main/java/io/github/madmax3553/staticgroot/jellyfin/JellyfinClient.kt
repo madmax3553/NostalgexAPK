@@ -307,6 +307,74 @@ class JellyfinClient(
 
 data class AuthResult(val accessToken: String, val userId: String, val serverId: String)
 
+data class DiscoveredServer(val url: String, val name: String)
+
+/**
+ * Finds a reachable Jellyfin server by probing candidate URLs (saved URL, build-configured LAN and
+ * Tailscale URLs) and broadcasting Jellyfin's UDP discovery packet on port 7359.
+ */
+object JellyfinDiscovery {
+    private const val DISCOVERY_PORT = 7359
+    private const val DISCOVERY_QUERY = "who is JellyfinServer?"
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun firstConfiguredUrl(csv: String): String =
+        csv.split(',').map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+
+    fun probe(rawUrl: String, timeoutMs: Int = 2500): DiscoveredServer? = runCatching {
+        val trimmed = rawUrl.trim()
+        if (trimmed.isEmpty()) return null
+        val base = JellyfinClient.normalizeServerUrl(trimmed)
+        val http = HttpUrlJellyfinHttp(connectTimeoutMs = timeoutMs, readTimeoutMs = timeoutMs)
+        val body = http.get("$base/System/Info/Public", mapOf("Accept" to "application/json"))
+        val obj = json.parseToJsonElement(body).jsonObject
+        val name = obj["ServerName"]?.jsonPrimitive?.content ?: "Jellyfin"
+        DiscoveredServer(base, name)
+    }.getOrNull()
+
+    fun udpDiscover(timeoutMs: Int = 1200): DiscoveredServer? = runCatching {
+        java.net.DatagramSocket().use { socket ->
+            socket.broadcast = true
+            socket.soTimeout = timeoutMs
+            val payload = DISCOVERY_QUERY.toByteArray(Charsets.UTF_8)
+            val packet = java.net.DatagramPacket(
+                payload,
+                payload.size,
+                java.net.InetAddress.getByName("255.255.255.255"),
+                DISCOVERY_PORT,
+            )
+            socket.send(packet)
+            val buf = ByteArray(2048)
+            val reply = java.net.DatagramPacket(buf, buf.size)
+            socket.receive(reply)
+            val text = String(reply.data, 0, reply.length, Charsets.UTF_8)
+            val obj = json.parseToJsonElement(text).jsonObject
+            val addr = obj["Address"]?.jsonPrimitive?.content?.trim().orEmpty()
+            if (addr.isEmpty()) return@use null
+            val name = obj["Name"]?.jsonPrimitive?.content ?: "Jellyfin"
+            DiscoveredServer(JellyfinClient.normalizeServerUrl(addr), name)
+        }
+    }.getOrNull()
+
+    fun discover(preferredUrl: String = "", configuredUrlsCsv: String = ""): DiscoveredServer? {
+        val candidates = LinkedHashSet<String>()
+        if (preferredUrl.isNotBlank()) {
+            runCatching { candidates.add(JellyfinClient.normalizeServerUrl(preferredUrl)) }
+        }
+        configuredUrlsCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach {
+            runCatching { candidates.add(JellyfinClient.normalizeServerUrl(it)) }
+        }
+        for (url in candidates) {
+            probe(url)?.let { return it }
+        }
+        val udp = udpDiscover()
+        if (udp != null) {
+            return probe(udp.url) ?: udp
+        }
+        return null
+    }
+}
+
 data class LibrarySection(
     val id: String,
     val title: String,

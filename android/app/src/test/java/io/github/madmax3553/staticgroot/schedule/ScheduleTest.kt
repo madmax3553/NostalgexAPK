@@ -207,4 +207,11 @@ class ChannelSchedulerTest {
     fun emptyPoolHasNoSchedule() {
         assertEquals(null, ChannelScheduler(zone).schedule(1, emptyList(), false, 1_791_633_600L))
     }
+
+    @Test
+    fun defaultCompanionUrlUsesJellyfinHostOnPort8787() {
+        assertEquals("http://192.168.1.20:8787", SharedStation.defaultUrl("http://192.168.1.20:8096"))
+        assertEquals("https://jellyfin.local:8787", SharedStation.defaultUrl("https://jellyfin.local:8920/jellyfin"))
+        assertEquals("", SharedStation.defaultUrl("not-a-url"))
+    }
 }

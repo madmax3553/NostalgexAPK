@@ -34,6 +34,7 @@ import io.github.madmax3553.staticgroot.enrichment.TmdbClient
 import io.github.madmax3553.staticgroot.jellyfin.AuthResult
 import io.github.madmax3553.staticgroot.jellyfin.HttpUrlJellyfinHttp
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinClient
+import io.github.madmax3553.staticgroot.jellyfin.JellyfinDiscovery
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinException
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinItem
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinMapping
@@ -92,7 +93,13 @@ class MainActivity : Activity() {
         root.addView(status)
         Thread {
             try {
-                val client = JellyfinClient(saved.serverUrl, http, deviceId, saved.accessToken, saved.userId)
+                val activeUrl = JellyfinDiscovery.discover(saved.serverUrl, BuildConfig.DEFAULT_JELLYFIN_URLS)?.url
+                    ?: saved.serverUrl
+                if (activeUrl != saved.serverUrl) {
+                    Log.i(TAG, "DISCOVERY switched saved server URL to reachable address")
+                    store.save(activeUrl, saved.accessToken, saved.userId)
+                }
+                val client = JellyfinClient(activeUrl, http, deviceId, saved.accessToken, saved.userId)
                 loadLibrary(client)
             } catch (e: JellyfinException) {
                 if (e.status == 401 || e.status == 403) {
@@ -133,12 +140,21 @@ class MainActivity : Activity() {
     private fun showSignIn(message: String?) {
         root.removeAllViews()
         root.addView(title("Sign in to Jellyfin"))
-        val server = field("Server address, e.g. http://jellyfin.example:8096").apply {
-            setText(store.lastServerUrl())
+        val initialServer = store.lastServerUrl().ifBlank {
+            JellyfinDiscovery.firstConfiguredUrl(BuildConfig.DEFAULT_JELLYFIN_URLS)
         }
-        val user = field("Username")
+        val server = field("Server address, e.g. http://jellyfin.example:8096").apply {
+            setText(initialServer)
+        }
+        val user = field("Username").apply {
+            setText(BuildConfig.DEFAULT_JELLYFIN_USER)
+        }
         val password = field("Password", secret = true)
-        status = TextView(this).apply { textSize = 18f; setPadding(0, dp(12), 0, 0); text = message.orEmpty() }
+        status = TextView(this).apply {
+            textSize = 18f
+            setPadding(0, dp(12), 0, 0)
+            text = message ?: "Searching for your Jellyfin server…"
+        }
         root.addView(server)
         root.addView(user)
         root.addView(password)
@@ -166,6 +182,26 @@ class MainActivity : Activity() {
             setPadding(0, dp(24), 0, 0)
             text = getString(R.string.about_credit)
         })
+        Thread {
+            val found = JellyfinDiscovery.discover(initialServer, BuildConfig.DEFAULT_JELLYFIN_URLS)
+            if (found != null) {
+                runOnUiThread {
+                    if (!isDestroyed && !isFinishing) {
+                        val current = server.text.toString().trim()
+                        if (current.isEmpty() || current == initialServer) {
+                            server.setText(found.url)
+                        }
+                        if (message == null) {
+                            status.text = "Found ${found.name} at ${found.url}"
+                        }
+                    }
+                }
+            } else if (message == null) {
+                runOnUiThread {
+                    if (!isDestroyed && !isFinishing) status.text = ""
+                }
+            }
+        }.start()
     }
 
     private fun passwordSignIn(url: String, name: String, pass: String) {
@@ -262,19 +298,29 @@ class MainActivity : Activity() {
         val t0 = System.currentTimeMillis()
         var config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
         val companion = io.github.madmax3553.staticgroot.schedule.CompanionSettings(this)
-        val shared = if (companion.url.isNotBlank()) io.github.madmax3553.staticgroot.schedule.SharedStation(
-            companion.url, companion.key, client.stationIdentity()) else null
-        var stationZone = ZoneId.systemDefault()
+        val companionUrl = if (companion.enabled) companion.resolveUrl(client.serverUrl) else ""
+        var shared = if (companionUrl.isNotBlank()) runCatching {
+            io.github.madmax3553.staticgroot.schedule.SharedStation(companionUrl, client.stationIdentity())
+        }.getOrNull() else null
+        var stationZone = DisplaySettings(this).resolveZoneId(ZoneId.of("America/Edmonton"))
         var disabledGenerated = emptySet<Int>()
+        var serverGenerated: List<io.github.madmax3553.staticgroot.schedule.SharedChannel> = emptyList()
         if (shared != null) {
             runOnUiThread { status.text = "Reading shared channel setup…" }
-            val setup = shared.setup(config.channels, stationZone.id)
-            stationZone = ZoneId.of(setup.timeZone)
-            // Generated channels (id from DYNAMIC_CHANNEL_ID_BASE) have no rules, so they are not
-            // built here. They are rebuilt from the library below.
-            config = config.copy(channels = setup.channels
-                .filter { it.enabled && it.id < DYNAMIC_CHANNEL_ID_BASE }.map { it.definition })
-            disabledGenerated = setup.channels.filter { !it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }.map { it.id }.toSet()
+            try {
+                val setup = shared.setup(config.channels, stationZone.id)
+                stationZone = ZoneId.of(setup.timeZone)
+                // Generated channels (id from DYNAMIC_CHANNEL_ID_BASE) have no rules, so they are not
+                // built here. They are rebuilt from the library and merged with serverGenerated below.
+                config = config.copy(channels = setup.channels
+                    .filter { it.enabled && it.id < DYNAMIC_CHANNEL_ID_BASE }.map { it.definition })
+                disabledGenerated = setup.channels.filter { !it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }.map { it.id }.toSet()
+                serverGenerated = setup.channels.filter { it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }
+                Log.i(TAG, "SHARED connected url=$companionUrl zone=$stationZone channels=${setup.channels.size} gen=${setup.generation}")
+            } catch (e: Exception) {
+                Log.w(TAG, "SHARED schedule unavailable at $companionUrl (${e.message}), using local schedule")
+                shared = null
+            }
         }
         val memberships = ChannelMemberships.parse(
             assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
@@ -282,7 +328,7 @@ class MainActivity : Activity() {
         val tParsed = System.currentTimeMillis()
         val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
         val staticChannels = ChannelPools.buildAll(config, items, enrichment = enrichment, memberships = memberships, clock = clock)
-        val channels = buildLineup(config, staticChannels, items, shared, stationZone, clock, disabledGenerated)
+        val channels = buildLineup(config, staticChannels, items, shared, stationZone, clock, disabledGenerated, serverGenerated)
         val tBuilt = System.currentTimeMillis()
         Log.i(
             TAG,
@@ -311,27 +357,39 @@ class MainActivity : Activity() {
             val startDate = io.github.madmax3553.staticgroot.schedule.LocalDays.broadcastDate(clock.nowEpochSeconds, stationZone)
             val force = intent.getBooleanExtra("force_regenerate", false)
             val candidates = ArrayList<Triple<Int, String, List<io.github.madmax3553.staticgroot.schedule.Block>>>()
+            val existingDays = HashMap<Pair<Int, String>, List<io.github.madmax3553.staticgroot.schedule.Block>>()
             for (offset in 0L..2L) {
                 val date = startDate.plusDays(offset)
+                val dayKey = date.toString()
                 val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
                 val locked = HashSet<Int>()
                 val day = channels.associate { ch ->
-                    val existing = if (force) null else shared.existing(ch, date.toString(), lookup)
-                    if (existing != null) locked.add(ch.id)
+                    val existing = if (force) null else shared.existing(ch, dayKey, lookup)?.takeIf { it.isNotEmpty() }
+                    if (existing != null) {
+                        locked.add(ch.id)
+                        existingDays[ch.id to dayKey] = existing
+                    }
                     ch.id to (existing ?: AppSession.scheduler!!.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600))
                 }
                 // Premiere channels keep their anchor; existing published days are immutable.
                 locked.addAll(channels.filter { it.isPremiere }.map { it.id })
                 val optimized = io.github.madmax3553.staticgroot.schedule.GenerationReshuffler.optimize(day, start, locked)
                 Log.i(TAG, "GENERATION overlap-reducing swaps=${optimized.swaps}")
-                channels.forEach { ch -> candidates.add(Triple(ch.id, date.toString(), optimized.days.getValue(ch.id))) }
+                channels.forEach { ch -> candidates.add(Triple(ch.id, dayKey, optimized.days.getValue(ch.id))) }
             }
-            if (force) shared.regenerate(candidates)
+            if (force) shared.regenerate(candidates.filter { it.third.isNotEmpty() })
             for ((id, dayKey, proposed) in candidates) {
                 val ch = channels.first { it.id == id }
                 val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(java.time.LocalDate.parse(dayKey), stationZone)
-                val saved = shared.publish(ch, dayKey, proposed, lookup)
-                AppSession.scheduler!!.installPublished(id, start, saved)
+                val alreadyPublished = existingDays[id to dayKey]
+                val saved = when {
+                    alreadyPublished != null -> alreadyPublished
+                    proposed.isNotEmpty() -> shared.publish(ch, dayKey, proposed, lookup)
+                    else -> emptyList()
+                }
+                if (saved.isNotEmpty()) {
+                    AppSession.scheduler!!.installPublished(id, start, saved)
+                }
             }
             AppSession.lastChannelId = shared.selection()
             AppSession.scheduler!!.usePublishedOnly()
@@ -378,7 +436,7 @@ class MainActivity : Activity() {
     private fun buildLineup(
         config: ChannelConfig, static: List<ChannelRuntime>, items: List<MediaItem>,
         shared: io.github.madmax3553.staticgroot.schedule.SharedStation?, zone: ZoneId, clock: FilterClock,
-        disabled: Set<Int>,
+        disabled: Set<Int>, serverGenerated: List<io.github.madmax3553.staticgroot.schedule.SharedChannel>,
     ): List<ChannelRuntime> {
         val store = GeneratedChannelStore(File(filesDir, "generated_channels.json"))
         val lineup = try {
@@ -390,12 +448,23 @@ class MainActivity : Activity() {
         val generatedIds = lineup.generated.map { it.definition.id }.toSet()
         var channels = lineup.channels
         var records = lineup.records
-        if (shared != null && lineup.generated.isNotEmpty()) {
+        if (shared != null && (lineup.generated.isNotEmpty() || serverGenerated.isNotEmpty())) {
             try {
-                val saved = shared.addChannels(lineup.generated.map { it.definition }).channels.associateBy { it.id }
+                val saved = if (lineup.generated.isNotEmpty()) {
+                    shared.addChannels(lineup.generated.map { it.definition }).channels.associateBy { it.id }
+                } else {
+                    serverGenerated.associateBy { it.id }
+                }
                 channels = channels.mapNotNull { rt ->
                     if (rt.id !in generatedIds) rt
                     else saved[rt.id]?.takeIf { it.enabled }?.let { ChannelRuntime(it.definition, rt.pool) }
+                }
+                val presentIds = channels.map { it.id }.toSet()
+                val remoteOnly = saved.values
+                    .filter { it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE && it.id !in presentIds }
+                    .map { ChannelRuntime(it.definition, emptyList()) }
+                if (remoteOnly.isNotEmpty()) {
+                    channels = (channels + remoteOnly).sortedBy { it.number }
                 }
                 records = records.map { r -> saved[r.id]?.let { r.copy(number = it.definition.number, name = it.name) } ?: r }
             } catch (e: Exception) {

@@ -21,7 +21,10 @@ class StationStore {
   read(file) { return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null; }
   writeNew(file, value) {
     // Synchronous operation in this single-process server; rename publishes a complete file.
-    if (fs.existsSync(file)) return this.read(file);
+    if (fs.existsSync(file)) {
+      const existing = this.read(file);
+      if (!Array.isArray(existing?.blocks) || existing.blocks.length > 0) return existing;
+    }
     const tmp = `${file}.${crypto.randomUUID()}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
     fs.renameSync(tmp, file);
@@ -84,8 +87,8 @@ class StationStore {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${channelId}_${dayKey}.json`);
     const saved = this.read(file);
-    if (saved) return saved;
-    if (!proposal) return null;
+    if (saved && Array.isArray(saved.blocks) && saved.blocks.length > 0) return saved;
+    if (!proposal) return saved;
     if (proposal.generation !== undefined && proposal.generation !== (setup.generation || 0)) {
       const error = new Error('Schedule regenerated; restart to reload'); error.status = 409; throw error;
     }
@@ -140,17 +143,21 @@ class StationStore {
   }
 }
 
-function createServer({ directory, token }) {
-  if (!token || token.length < 24) throw new Error('STATICGROOT_TOKEN must contain at least 24 characters');
+function createServer({ directory, token } = {}) {
+  if (token !== undefined && token !== '' && token.length < 24) {
+    throw new Error('STATICGROOT_TOKEN must contain at least 24 characters');
+  }
   const store = new StationStore(directory);
-  const expected = Buffer.from(`Bearer ${token}`);
+  const expected = token ? Buffer.from(`Bearer ${token}`) : null;
   return http.createServer(async (req, res) => {
     const reply = (code, body) => {
       res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(body));
     };
-    const got = Buffer.from(req.headers.authorization || '');
-    if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) return reply(401, { error: 'Unauthorized' });
+    if (expected) {
+      const got = Buffer.from(req.headers.authorization || '');
+      if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) return reply(401, { error: 'Unauthorized' });
+    }
     try {
       const parts = new URL(req.url, 'http://localhost').pathname.split('/').filter(Boolean);
       if (parts[0] !== 'v1' || parts[1] !== 'stations') return reply(404, { error: 'Not found' });
@@ -215,6 +222,7 @@ function createServer({ directory, token }) {
 
 module.exports = { StationStore, createServer };
 if (require.main === module) {
-  const server = createServer({ directory: process.env.STATICGROOT_DATA || '/data', token: process.env.STATICGROOT_TOKEN });
+  const token = process.env.STATICGROOT_REQUIRE_TOKEN === '1' ? process.env.STATICGROOT_TOKEN : undefined;
+  const server = createServer({ directory: process.env.STATICGROOT_DATA || '/data', token });
   server.listen(Number(process.env.PORT || 8787), process.env.HOST || '0.0.0.0', () => console.log('StaticGroot schedules listening'));
 }

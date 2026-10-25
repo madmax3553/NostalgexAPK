@@ -74,7 +74,7 @@ test('generated channels cannot take static ids or carry malformed definitions',
   assert.throws(() => store.addChannels(station, { channels: 'x' }), /Invalid channels/);
   assert.equal(store.setup(station).channels.length, 1);
 });
-test('HTTP rejects missing auth and publishes authenticated requests', async t => {
+test('HTTP rejects missing auth when token is configured and publishes authenticated requests', async t => {
   const token = 'synthetic-test-key-1234567890';
   const server = createServer({ directory: directory(t), token });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -83,4 +83,15 @@ test('HTTP rejects missing auth and publishes authenticated requests', async t =
   assert.equal((await fetch(url)).status, 401);
   const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(setup) });
   assert.equal(response.status, 200);
+});
+test('HTTP allows tokenless station discovery and replaces an empty day proposal', async t => {
+  const server = createServer({ directory: directory(t) });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}/v1/stations/${station}`;
+  assert.equal((await fetch(`${base}/setup`, { method: 'POST', body: JSON.stringify(setup) })).status, 200);
+  await fetch(`${base}/days/1/2026-10-10`, { method: 'POST', body: JSON.stringify({ blocks: [] }) });
+  const populated = await fetch(`${base}/days/1/2026-10-10`, { method: 'POST', body: JSON.stringify({ blocks: [block] }) });
+  assert.equal(populated.status, 200);
+  assert.equal((await populated.json()).blocks.length, 1);
 });

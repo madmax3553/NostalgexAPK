@@ -72,6 +72,9 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
     private val font = resources.getFont(R.font.dmmono_regular)
     private val accent = resources.getFont(R.font.vt323_regular)
     private val time = SimpleDateFormat("h:mm a", Locale.getDefault())
+    var displayTimeZone: java.util.TimeZone
+        get() = time.timeZone
+        set(value) { time.timeZone = value; invalidate() }
 
     init { isFocusable = true; isFocusableInTouchMode = true }
 
