@@ -161,7 +161,7 @@ function createServer({ directory, token } = {}) {
     try {
       const parts = new URL(req.url, 'http://localhost').pathname.split('/').filter(Boolean);
       if (parts[0] === 'v1' && parts[1] === 'apk' && parts.length === 2 && req.method === 'GET') {
-        const apk = path.join(store.root, 'app-debug.apk');
+        const apk = path.join(store.directory, 'app-debug.apk');
         if (!fs.existsSync(apk)) return reply(404, { error: 'APK not published' });
         res.writeHead(200, { 'Content-Type': 'application/vnd.android.package-archive', 'Cache-Control': 'no-store' });
         return fs.createReadStream(apk).pipe(res);
