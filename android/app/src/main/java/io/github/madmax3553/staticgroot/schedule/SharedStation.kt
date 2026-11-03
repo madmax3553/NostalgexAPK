@@ -1,6 +1,7 @@
 package io.github.madmax3553.staticgroot.schedule
 
 import android.content.Context
+import android.util.Log
 import io.github.madmax3553.staticgroot.channels.ChannelDefinition
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
 import io.github.madmax3553.staticgroot.channels.MediaItem
@@ -84,11 +85,38 @@ class SharedStation(val base: String, stationId: String) {
         if (e.status == 404) null else throw e
     }
 
-    private fun resolve(saved: SharedDay, items: Map<String, MediaItem>): List<Block> = saved.blocks.map {
-            val item = items[it.itemId] ?: throw IllegalStateException(
-                "A published programme is unavailable to this Jellyfin user. Use the same library permissions on both devices.")
-            Block(item, it.startUnix, it.endUnix, it.isBumper, it.mediaOffsetSeconds, it.isMidBreak)
+    /**
+     * Published days are immutable and shared, so a programme this device cannot see (removed from
+     * the library, or hidden from this user) is not rewritten. Its slot goes to a station break
+     * instead, and breaks that end up side by side become one. The break's item is only for the
+     * coming-next card: the next programme still on the schedule, else the previous one. A day with
+     * none left resolves to nothing.
+     */
+    private fun resolve(saved: SharedDay, items: Map<String, MediaItem>): List<Block> {
+        val present = saved.blocks.filter { !it.isBumper && it.itemId in items }
+        if (present.isEmpty()) {
+            if (saved.blocks.isNotEmpty()) Log.w(TAG, "SHARED day has no programmes this user can see, leaving it off air")
+            return emptyList()
         }
+        val missing = saved.blocks.filter { it.itemId !in items }.map { it.itemId }.toSet()
+        if (missing.isNotEmpty()) Log.w(TAG, "SHARED ${missing.size} published programmes unavailable, filling with station breaks")
+        val result = ArrayList<Block>()
+        for ((index, stored) in saved.blocks.withIndex()) {
+            val item = items[stored.itemId]
+            val block = if (item != null) {
+                Block(item, stored.startUnix, stored.endUnix, stored.isBumper, stored.mediaOffsetSeconds, stored.isMidBreak)
+            } else {
+                val standIn = saved.blocks.drop(index + 1).firstOrNull { !it.isBumper && it.itemId in items }
+                    ?: present.lastOrNull { it.startUnix < stored.startUnix } ?: present.first()
+                Block(items.getValue(standIn.itemId), stored.startUnix, stored.endUnix, isBumper = true)
+            }
+            val previous = result.lastOrNull()
+            if (previous != null && previous.isBumper && !previous.isMidBreak && block.isBumper && !block.isMidBreak) {
+                result[result.lastIndex] = previous.copy(endUnix = block.endUnix)
+            } else result.add(block)
+        }
+        return result
+    }
 
     fun regenerate(days: List<Triple<Int, String, List<Block>>>) {
         val request = Regeneration(generation, days.map { (channel, day, blocks) ->
@@ -126,6 +154,7 @@ class SharedStation(val base: String, stationId: String) {
 
     companion object {
         const val DEFAULT_PORT = 8787
+        private const val TAG = "StaticGroot"
 
         /** Same host and scheme as the Jellyfin server, port 8787. */
         fun defaultUrl(jellyfinServerUrl: String): String = runCatching {

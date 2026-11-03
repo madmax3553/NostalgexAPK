@@ -3,6 +3,32 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-03 (a missing published programme no longer fails the launch)
+
+**Why.** After rolling part of the library, a launch failed outright. Published days are
+immutable and shared between TVs, and `SharedStation.resolve` threw an exception for any
+programme this user could not see, which the launch sequence does not catch. The tvOS app
+has no shared-station code, so this failure only existed on Android.
+
+**Changed.**
+- `SharedStation.resolve` turns the slot of a missing programme into a station break
+  instead of throwing, so the channel plays commercials until the next programme. Breaks
+  that end up side by side are merged. The break's item, used only for the coming-next
+  card, is the next programme still on the schedule, else the previous one. A day with no
+  visible programmes resolves to empty and the channel shows OFF AIR. Each case logs a
+  warning.
+- `CLAUDE.md` gained three sections: plan first then change, the workflow (Chad identifies
+  a change, the agent proposes, Chad approves, the agent implements, commits and pushes,
+  then asks before pushing to devices), and keeping the git tree clean.
+
+**Half-done.** Unverified on a device. The Android build needs JDK 17: the default `java`
+here is 27, which Gradle 8.10.2 cannot parse, so `JAVA_HOME` must point at JDK 17 or the
+build fails with "27.0.1.0.3". A TV that still has a removed programme will play it while
+a TV that lost it plays commercials, because published days are not rewritten.
+
+**Next.** Chad verifies on a device by removing a title from a published channel and
+relaunching.
+
 ## 2026-11-02 (tests removed)
 
 **Why.** Decision by Chad: this project is developed and verified on real devices, not
