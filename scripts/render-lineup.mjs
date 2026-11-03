@@ -17,7 +17,9 @@ const CHANNELS_PATH = new URL("../channels.json", import.meta.url);
 const TARGETS = ["index.html"];
 
 const BUNDLE_STYLE = {
-  "nostalgex":     { color: "#FFE500", desc: "The 80s and 90s. All retro, all the time." },
+  "nostalgex":     { color: "#FFE500", desc: "Rewatchables, VHS, DVD and late night, the way cable used to run." },
+  "movies":        { color: "#E74C3C", desc: "Comedy, action, sci-fi, crime, romance and the greats." },
+  "tv":            { color: "#9B59B6", desc: "Sitcoms, drama, crime, docs and reality." },
   "kids":          { color: "#00C4FF", desc: "Disney, Nick, Pixar, and the whole crew." },
   "truecrime":     { color: "#B0392E", desc: "Docs, thrillers, and whodunits." },
   "essentials":    { color: "#9B59B6", desc: "Everyday favorites and feel-good picks." },

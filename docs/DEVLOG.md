@@ -11,7 +11,11 @@ studio channels, about twelve animation channels, fourteen music-video genres), 
 titles aired on several channels at once. The goal is a smaller lineup with a better mix,
 in a retro cable spirit, with one cartoon channel and one seasonal channel per holiday.
 
-**Shipped.** StaticGroot 0.1.33 (34) debug APK, with `channels.json` v38 bundled.
+**Shipped.** StaticGroot 0.1.33 (34) debug APK, with `channels.json` v38 bundled,
+installed on the Sony Android TV and the Fire TV Stick. The Fire TV connected to the shared
+station and loaded the new lineup (23 static channels, 22 shown in November, 3 generated).
+The Sony was in standby with the screen off, where Doze rejects all network traffic for the
+app (`REJECT_ALL`, blocked reason 2), so it was installed but not verified.
 
 **Changed.**
 - `channels.json` v38: 19 year-round channels in 4 bundles (RETRO CABLE, MOVIES, TV, KIDS &
@@ -46,9 +50,14 @@ in a retro cable spirit, with one cartoon channel and one seasonal channel per h
 **Half-done.**
 - Shared station: the companion server keeps the first setup it receives and the app
   replaces its channel list with the server's, so the new lineup only reaches a TV after the
-  station folder in the schedule service volume is deleted and the first TV republishes.
-  Published days are keyed by channel id and the new ids 1 to 19 reuse old ones, so the whole
-  station folder has to go, not only `setup.json`.
+  station's schedule state is deleted and the first TV republishes. Published days are keyed
+  by channel id and the new ids 1 to 19 reuse old ones, so `setup.json`, `selection.json`,
+  every day file and the `generation-*` folders were removed (a backup tar of the station
+  folder is on the Docker host). `playback/` and `catalog.json` were kept. The station is
+  currently empty, so the next TV to launch publishes the setup and sets the station time
+  zone. The Sony is set to Edmonton and the Fire TV to Chicago. Before this reset the station
+  zone was Edmonton, so launch the Sony first, or delete the schedule state again if the
+  Fire TV publishes first.
 - The `index.html` lineup region and its channel counts were not regenerated. That page is
   the tvOS marketing copy and the tvOS app still ships 131 channels.
 - Android unit tests that read the real `channels.json` (`ChannelConfigTest`,
