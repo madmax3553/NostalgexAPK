@@ -119,7 +119,6 @@ npm run dev
 Gradle project in `android/`. Needs JDK 17 and the Android SDK (platform 35, build-tools 35.0.0). Put `sdk.dir=/path/to/Sdk` in `android/local.properties`; that file is git-ignored.
 
 ```
-./gradlew -p android :app:testDebugUnitTest   # unit tests
 ./gradlew -p android :app:assembleDebug       # debug APK in android/app/build/outputs/apk/debug/
 ```
 
@@ -173,7 +172,7 @@ Issues and pull requests are welcome. A few things that make them land faster:
 
 - The easiest first PR is a rule change in `channels.json` (a title on the wrong channel, a channel that is always empty). `CHANNELS.md` explains every rule field.
 - Keep PRs small and about one thing.
-- Web changes: `npm test` must pass. tvOS changes: build for a real Apple TV, not just the simulator, because the simulator keychain and storage behave differently. Swift tests (`NostalgexTests`) must keep passing.
+- Web changes: `npm run check` must pass. tvOS changes: build for a real Apple TV, not just the simulator, because the simulator keychain and storage behave differently. Swift tests (`NostalgexTests`) must keep passing.
 - Android changes: check behaviour against the Swift code on the same inputs before calling it done. Every screen must work with a D-pad alone.
 - Not sure where to start? Ask in [Discord](https://discord.gg/FgnZcr5bDT) or open an issue first.
 - One person maintains this in their spare time. You will get a reply, but not always the same day.

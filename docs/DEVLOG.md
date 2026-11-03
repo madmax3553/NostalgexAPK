@@ -3,6 +3,29 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-02 (tests removed)
+
+**Why.** Decision by Chad: this project is developed and verified on real devices, not
+through automated tests, and the lineup change had just left the Android tests that read
+the real `channels.json` out of date.
+
+**Changed.**
+- Deleted the 25 Android unit tests, `filter-golden.json` and the JUnit dependency.
+- Deleted the three server tests, the three web smoke scripts and
+  `nostalgex-filter-fixture.cjs` (it only generated the Android golden file).
+- `npm test` and the `test:*` scripts are gone. `npm run check` keeps the two
+  consistency checks (`channels:doc:check`, `changelog:check`), and CI runs it.
+- Removed the Android and server test jobs from CI. Updated `CLAUDE.md`, `README.md`,
+  `server/README.md` and `docs/REPOSITORY-LAYOUT.md` to stop pointing at them.
+
+**Half-done.** The Swift tests (`NostalgexTests`, `NostalgexUITests`) and the tvOS CI job
+were left alone on purpose, since the Swift app is frozen. Android still assembles after
+the removal (`assembleDebug` passes). No new APK was installed, because app code did not
+change.
+
+**Next.** Nothing blocked. Old DEVLOG entries still mention the deleted tests, which is
+accurate history and was not rewritten.
+
 ## 2026-11-02 (lineup cut from 131 channels to 19)
 
 **Why.** The guide repeated itself. Many channels filtered the same movie pool with

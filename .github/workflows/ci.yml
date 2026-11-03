@@ -1,4 +1,4 @@
-# Nostalgex — confidence guardrails (web build + tvOS unit tests)
+# Nostalgex — confidence guardrails (web build, config checks, tvOS unit tests)
 # Repo layout: https://github.com/chadMueller/Nostalgex — see docs/REPOSITORY-LAYOUT.md
 name: CI
 
@@ -20,8 +20,6 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       tvos: ${{ steps.filter.outputs.tvos }}
       config: ${{ steps.filter.outputs.config }}
-      android: ${{ steps.filter.outputs.android }}
-      server: ${{ steps.filter.outputs.server }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,14 +51,6 @@ jobs:
             tvos:
               - '.github/workflows/ci.yml'
               - 'Nostalgex/**'
-            android:
-              - '.github/workflows/ci.yml'
-              - 'android/**'
-              - 'channels.json'
-              - 'channels-memberships.json'
-            server:
-              - '.github/workflows/ci.yml'
-              - 'server/**'
             config:
               - '.github/workflows/ci.yml'
               - 'package.json'
@@ -71,11 +61,9 @@ jobs:
               - 'scripts/render-channels-doc.mjs'
               - 'scripts/nostalgex-channel-filter.cjs'
               - 'scripts/nostalgex-daily-manifest.js'
-              - 'scripts/nostalgex-filter-smoke.mjs'
-              - 'scripts/nostalgex-schedule-order-smoke.mjs'
 
   channel-engine:
-    name: Channel engine (rule parity, schedule order, docs)
+    name: Config checks (channel doc, changelog)
     needs: changes
     if: ${{ needs.changes.outputs.config == 'true' }}
     runs-on: ubuntu-latest
@@ -89,16 +77,10 @@ jobs:
 
       - run: npm ci
 
-      # Three guardrails against the drift found in the 2026-09-02 audit:
-      #   test:filter        - the shared JS rule filter still honours every
-      #                        channels.json field (imdbRatingMin/imdbVotesMin
-      #                        were silently missing on web while Swift enforced them)
-      #   test:schedule      - web daily-manifest ordering still matches the tvOS
-      #                        SchedulePoolOrdering, so both surfaces air the same program
-      #   channels:doc:check - CHANNELS.md is regenerated from channels.json
-      #                        (it had drifted 8 config versions)
-      - name: Run channel engine checks
-        run: npm test
+      # channels:doc:check keeps CHANNELS.md regenerated from channels.json
+      # (it had drifted 8 config versions); changelog:check needs release notes.
+      - name: Run config checks
+        run: npm run check
 
   web-build:
     name: Web (Vite build)
@@ -117,39 +99,6 @@ jobs:
         run: |
           npm ci
           npm run build
-
-  android-unit-tests:
-    name: Android unit tests (StaticGroot)
-    needs: changes
-    if: ${{ needs.changes.outputs.android == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # The Android SDK is preinstalled on ubuntu-latest. TMDB and OMDb keys are not needed:
-      # they default to empty and the tests use fake HTTP.
-      - name: Run unit tests
-        run: ./gradlew -p android :app:testDebugUnitTest
-
-  server-tests:
-    name: Companion server tests
-    needs: changes
-    if: ${{ needs.changes.outputs.server == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Run server tests
-        run: node --test server/
 
   tvos-unit-tests:
     name: tvOS unit tests (NostalgexTests)

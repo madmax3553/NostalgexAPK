@@ -6,7 +6,7 @@
  * Relying on whoever cuts the build to remember is how 1.0.23 shipped to TestFlight with
  * notes describing a different build.
  *
- * Runs as part of `npm test`.
+ * Runs as part of `npm run check`.
  */
 import fs from 'node:fs';
 import path from 'node:path';

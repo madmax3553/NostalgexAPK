@@ -48,7 +48,7 @@ The nested folder `Nostalgex/Nostalgex/` (app target inside the project) is norm
 
 ## Shared logic
 
-- **Filtering / schedules:** Keep `plex-tuner.html` (JS), `android/` (Kotlin) and `Nostalgex/.../AppState.swift` (Swift) aligned. The Swift code is the reference for the Android port. Shared data lives in `channels.json`; duplicated rule semantics should be updated together, and checked with `scripts/nostalgex-filter-smoke.mjs` and `scripts/nostalgex-schedule-order-smoke.mjs`.
+- **Filtering / schedules:** Keep `plex-tuner.html` (JS), `android/` (Kotlin) and `Nostalgex/.../AppState.swift` (Swift) aligned. The Swift code is the reference for the Android port. Shared data lives in `channels.json`; duplicated rule semantics should be updated together.
 - **Secrets:** TMDB / Supabase / OMDb keys stay in ignored files (see repo `.gitignore`) and Vercel env vars — never commit real credentials.
 
 ## Deployment

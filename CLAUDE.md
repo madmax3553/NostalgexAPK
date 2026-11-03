@@ -103,15 +103,13 @@ port as much as to the Swift app.
    -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)' \
    -only-testing:NostalgexTests CODE_SIGN_IDENTITY="-" \
    CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
-- Android unit tests must pass. Run them with
-  `./gradlew -p android :app:testDebugUnitTest` (confirmed 2026-10-10). Needs
+- Build the Android app with `./gradlew -p android :app:assembleDebug`. Needs
   JDK 17 (`JAVA_HOME`) and the Android SDK at `~/Android/Sdk`, which is set in
   `android/local.properties` (git-ignored). Gradle 8.10.2 is pinned by the wrapper.
+  The Android, server and web tests were deleted on 2026-11-02, so check behaviour on
+  a real device instead.
 - `channels.json` is shared by the Swift app, the Android app and the web tuner
   (`scripts/nostalgex-channel-filter.cjs`). Change all of them or they drift.
-  Any change to `channels.json` or filter semantics needs the smoke scripts in
-  `scripts/` (`nostalgex-filter-smoke.mjs`, `nostalgex-schedule-order-smoke.mjs`)
-  run against the new rules.
 - Generated regions of `index.html` come from `content/changelog.json` and
   `channels.json` via the scripts in `scripts/`. Never hand-edit between the
   markers; edit the source and re-render.

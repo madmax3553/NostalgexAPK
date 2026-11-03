@@ -114,12 +114,6 @@ All requests require `Authorization: Bearer <service-key>`.
 Station IDs are SHA-256 of the Jellyfin server ID and user ID. They are not secrets;
 the service key controls access. The service never receives the Jellyfin login token.
 
-Tests use synthetic data:
-
-```sh
-node --test server/schedule-service.test.cjs
-```
-
 ## Playback profiles
 
 ### Channel overlap audit
