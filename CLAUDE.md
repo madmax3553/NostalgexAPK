@@ -14,6 +14,43 @@ written here, including the dev log, is readable by anyone.
 | **Web tuner** | Live. Shares channel rules with both native apps. | `plex-tuner.html`, `app.js`, `scripts/nostalgex-channel-filter.cjs` |
 | **Marketing site** | Live on Vercel. | `index.html` and friends |
 
+## Plan first, then change
+
+Do not change anything until the plan has been presented and approved in this
+conversation. That covers editing, creating or deleting files, git commands that
+alter state (commit, stash, checkout, reset), installs, and the dev log.
+
+- A question is not a request. "Why do we do X" or "should we do A or B" gets an
+  answer and, if useful, a plan. It does not get a diff.
+- Reading is always fine without approval: read, grep, glob, git log, git status.
+- A plan names the files it touches, what changes and why, what stays the same,
+  how it will be verified, and the risks and open questions.
+- Approval covers the plan as presented. If the scope grows or the approach
+  changes, stop and present the new plan.
+- This applies to docs and to this file too.
+
+## Workflow
+
+1. Chad identifies a change.
+2. The agent proposes options and a recommendation. No edits yet.
+3. Chad approves a plan.
+4. The agent implements it, commits and pushes.
+5. The agent then asks for permission before installing or pushing to any device
+   (`scripts/push-android.sh` and the like).
+
+## Keep the tree clean
+
+`git status` is clean at the start and at the end of every session. Anything
+untracked or modified that is not part of the approved change is one of four things:
+
+- a mistake, so delete it or revert it;
+- real work that needs tracking, so add it and commit it;
+- generated or local output, so add it to `.gitignore`;
+- a change from an unapproved edit, so revert it and bring it back as a plan.
+
+Never leave a file in limbo, and never "tidy" by deleting something unfamiliar
+without checking what it is first.
+
 ## Android TV port
 
 - The Swift code is the **spec**. When behaviour is unclear, read the Swift
