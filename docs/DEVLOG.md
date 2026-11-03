@@ -3,6 +3,62 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-02 (lineup cut from 131 channels to 19)
+
+**Why.** The guide repeated itself. Many channels filtered the same movie pool with
+slightly different rules (seven Christmas channels sharing one 114-title allowlist, five
+studio channels, about twelve animation channels, fourteen music-video genres), so the same
+titles aired on several channels at once. The goal is a smaller lineup with a better mix,
+in a retro cable spirit, with one cartoon channel and one seasonal channel per holiday.
+
+**Shipped.** StaticGroot 0.1.33 (34) debug APK, with `channels.json` v38 bundled.
+
+**Changed.**
+- `channels.json` v38: 19 year-round channels in 4 bundles (RETRO CABLE, MOVIES, TV, KIDS &
+  FAMILY) plus 4 seasonal member channels in the HOLIDAZE (December) and FRIGHT NIGHT
+  (October) bundles. Android already pools a seasonal bundle into one in-season channel,
+  so the guide shows one holiday channel at a time. Ids now equal numbers for the year-round
+  channels, which removes the id/number mismatch the old file had on 81 channels.
+- New LATE NIGHT channel (horror plus keyword-matched cult and erotic thrillers, 1975 to
+  2009, R blocked before 21:00 like VHS VAULT) because every horror channel used to be
+  seasonal, which left no horror outside October.
+- SATURDAY MATINEE takes live-action movies from 1930 to 1979. ACTION, SCI-FI & FANTASY and
+  CRIME & THRILLERS start at 1980, so a film belongs to one of them, not both.
+- TOONS replaces every cartoon, Disney, Pixar, Nickelodeon, DreamWorks and anime channel.
+  The anime exclusivity rule now points at TOONS.
+- FRESH is now "recently added in the last 30 days" with the premiere scheduling flag. The
+  old release-date version (released in the last 6 months) is gone, because the two gates
+  cannot be OR'd in the filter.
+- ALL TIME GREATS uses `ratingMin: 8` plus the Oscar list as `editorialOverrides`, since a
+  rating gate and a title list cannot be OR'd either.
+- Dropped outright: all studio, franchise, music-video, sports, arthouse and decade channels.
+  Android still generates franchise channels from the library. The music-video pipeline is
+  untouched in code and simply has no channels to feed. Sports and arthouse were dropped
+  because the library has little of either.
+- `channels-memberships.json` remapped from old ids to new ones by
+  `scripts/migrate-lineup-v38.mjs` (one-shot, like the v14 migration). 4,742 items kept, 412
+  dropped. The stand-up lock (`exclusive: 58`) is kept on purpose so stand-up specials stay
+  hidden from every other channel now that STAND-UP is gone. Not rebuilt from TMDB.
+- `MAX_GENERATED` lowered from 12 to 4, so library-generated channels do not crowd a
+  19-channel guide.
+- `CHANNELS.md` regenerated. `README.md` states that the tvOS copy still has the old lineup.
+
+**Half-done.**
+- Shared station: the companion server keeps the first setup it receives and the app
+  replaces its channel list with the server's, so the new lineup only reaches a TV after the
+  station folder in the schedule service volume is deleted and the first TV republishes.
+  Published days are keyed by channel id and the new ids 1 to 19 reuse old ones, so the whole
+  station folder has to go, not only `setup.json`.
+- The `index.html` lineup region and its channel counts were not regenerated. That page is
+  the tvOS marketing copy and the tvOS app still ships 131 channels.
+- Android unit tests that read the real `channels.json` (`ChannelConfigTest`,
+  `FilterGoldenTest`) were not run or updated. They will not match the new lineup.
+- Not checked against a real library. Pool sizes for the new merged channels are unmeasured.
+
+**Next.** Run the guide on both TVs after the station reset and look for thin channels
+(FRESH and LATE NIGHT are the likeliest). If a channel is empty, loosen its rules rather
+than adding channels back. The tvOS port of this lineup is a later job.
+
 ## 2026-10-24 (automatic shared station discovery and lineup sync)
 
 **Why.** A second Android TV (Fire TV Stick, `AFTMA08C15`) showed a different

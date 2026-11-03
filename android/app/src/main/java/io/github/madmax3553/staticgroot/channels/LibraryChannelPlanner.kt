@@ -78,7 +78,7 @@ object LibraryChannelPlanner {
     private const val KEEP_MIN_ITEMS = 3
     private const val OVERLAP_SKIP = 0.8
     private const val MAX_NEW_PER_KIND = 4
-    const val MAX_GENERATED = 12
+    const val MAX_GENERATED = 4
     private const val FIRST_NUMBER = 300
 
     private val STOP = setOf("the", "a", "an", "and", "of", "in", "to", "for", "with", "on", "at", "is", "am", "are",

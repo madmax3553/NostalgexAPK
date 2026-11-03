@@ -84,7 +84,7 @@ Marketing page and the path into the tuner and the App Store. Served at `/` on V
 ## Shared Config
 
 ### `channels.json`
-The tvOS, Android TV and web tuner read the same channel configuration (131 channels in 14 bundles). The tvOS app bundles a copy and can also fetch an updated one at runtime. Changing `channels.json` or the filter rules means updating every surface together, or they drift.
+Android TV and the web tuner read the root `channels.json`: 19 year-round channels plus the seasonal holiday and Halloween channels, in 6 bundles (config v38). The tvOS app keeps its own copy of the earlier 131-channel lineup, so the two differ until the new lineup is ported back. Changing the filter rules still means updating the web tuner and the Android app together, or they drift.
 
 See `CHANNELS.md` for a human-readable breakdown of each channel's rules and behavior.
 
