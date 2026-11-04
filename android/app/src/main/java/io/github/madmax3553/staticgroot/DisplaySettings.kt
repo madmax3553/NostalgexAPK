@@ -75,6 +75,13 @@ class DisplaySettings(private val context: Context) {
         get() = NorthAmericaTimeZone.fromId(prefs.getString("time_zone", null))
         set(value) { prefs.edit().putString("time_zone", value.id).apply() }
 
+    var lastChannelId: Int?
+        get() = if (prefs.contains("last_channel_id")) prefs.getInt("last_channel_id", -1).takeIf { it >= 0 } else null
+        set(value) {
+            if (value == null) prefs.edit().remove("last_channel_id").apply()
+            else prefs.edit().putInt("last_channel_id", value).apply()
+        }
+
     fun resolveZoneId(stationZone: ZoneId): ZoneId = timeZone.resolve(context, stationZone)
 
     fun displayTimeZone(stationZone: ZoneId): TimeZone =

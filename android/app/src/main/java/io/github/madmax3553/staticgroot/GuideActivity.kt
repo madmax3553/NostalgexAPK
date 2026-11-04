@@ -2,29 +2,33 @@ package io.github.madmax3553.staticgroot
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import android.widget.*
 import androidx.media3.ui.PlayerView
 import io.github.madmax3553.staticgroot.channels.ChannelRuntime
 import io.github.madmax3553.staticgroot.channels.displayTitle
 import io.github.madmax3553.staticgroot.schedule.ChannelSchedule
-import java.util.concurrent.Executors
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /** TunerView proportions: information left, 4:3 preview right, EPG underneath. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -42,9 +46,10 @@ class GuideActivity : Activity() {
     private lateinit var grid: GuideGrid
     private lateinit var message: TextView
     private lateinit var description: TextView
-    private lateinit var programmeProgress: ProgressBar
-    private lateinit var settings: Button
+    private lateinit var programProgress: ProgressBar
+    private lateinit var settings: TextView
     private lateinit var playback: TunerPlayback
+    private var activeControlsDialog: Dialog? = null
     private var focused: ChannelRuntime? = null
     private var fullscreen = false
     private var started = false
@@ -74,26 +79,26 @@ class GuideActivity : Activity() {
         }
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         nav.addView(GrootLogoView(this), LinearLayout.LayoutParams(0, dp(72), 1f))
-        settings = Button(this).apply {
-            text = "SETTINGS"; textSize = 12f; isFocusableInTouchMode = true
-            setTextColor(GrootBrand.CYAN)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(GrootBrand.SURFACE)
-            setOnClickListener { showSettings() }
-        }
-        settings.setOnKeyListener { _, key, event ->
-            if (key == KeyEvent.KEYCODE_DPAD_DOWN && event.action == KeyEvent.ACTION_DOWN) {
-                grid.requestFocus(); true
-            } else false
+        settings = makePillButton("◀ SETTINGS") { showSettings(focused?.id) }.apply {
+            setOnKeyListener { _, key, event ->
+                if (event.action == KeyEvent.ACTION_DOWN &&
+                    (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_DPAD_RIGHT || key == KeyEvent.KEYCODE_BACK)
+                ) {
+                    focused?.let { grid.select(it.id) }
+                    grid.requestFocus()
+                    true
+                } else false
+            }
         }
         nav.addView(settings)
         info.addView(nav)
-        description = label("Building programme guide…", 13f, Color.WHITE)
+        description = label("Building program guide…", 13f, Color.WHITE)
         info.addView(description, LinearLayout.LayoutParams(-1, 0, 1f))
-        programmeProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+        programProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 1000
             progressTintList = android.content.res.ColorStateList.valueOf(GrootBrand.CYAN)
         }
-        info.addView(programmeProgress, LinearLayout.LayoutParams(-1, dp(4)))
+        info.addView(programProgress, LinearLayout.LayoutParams(-1, dp(4)))
         video = PlayerView(this).apply { useController = false; isFocusable = false }
         retroOverlay = RetroOverlay(this)
         bumper = BumperView(this).apply { visibility = View.GONE }
@@ -109,7 +114,7 @@ class GuideActivity : Activity() {
         grid = GuideGrid(this, { ch -> focused = ch; showInfo() }, { ch ->
             if (playback.channel?.id == ch.id && (playback.player.isPlaying || playback.entry?.block?.isBumper == true)) setFullscreen(true)
             else { playback.tune(ch, force = true); showInfo() }
-        }, { settings.requestFocus() })
+        }, { showSettings(focused?.id) })
         grid.displayTimeZone = displaySettings.displayTimeZone(AppSession.stationZone)
         val nowInit = System.currentTimeMillis() / 1000
         schedules = AppSession.channels.mapNotNull { ch -> AppSession.scheduleFor(ch, nowInit)?.let { ch.id to it } }.toMap()
@@ -129,7 +134,8 @@ class GuideActivity : Activity() {
         playback.setCaptions(displaySettings.captionsEnabled)
         AppSession.client?.streamQuality = displaySettings.streamQuality
         root.post { layoutTuner() }
-        focused = grid.channels.firstOrNull { it.id == AppSession.lastChannelId }
+        val preferredId = AppSession.lastChannelId ?: displaySettings.lastChannelId
+        focused = grid.channels.firstOrNull { it.id == preferredId }
             ?: grid.channels.firstOrNull { schedules[it.id]?.nowPlaying != null || it.pool.isNotEmpty() }
             ?: grid.channels.firstOrNull()
         focused?.let { grid.select(it.id) }
@@ -140,25 +146,64 @@ class GuideActivity : Activity() {
         super.onStart()
         if (!::playback.isInitialized) return
         started = true
+        AppSession.onSchedulesUpdated = {
+            handler.post { if (started && !isDestroyed) rebuildSchedules() }
+        }
         grid.crawlEnabled = true
         playback.resume()
         focused?.let { if (playback.channel == null) playback.tune(it) }
+        syncRemoteSelectionOnResume()
         handler.post(refresh)
     }
 
     override fun onStop() {
         started = false
+        AppSession.onSchedulesUpdated = null
         if (::grid.isInitialized) grid.crawlEnabled = false
         handler.removeCallbacks(refresh)
+        val activeChannelId = (if (::playback.isInitialized) playback.channel?.id else null) ?: focused?.id
+        if (activeChannelId != null) {
+            AppSession.lastChannelId = activeChannelId
+            displaySettings.lastChannelId = activeChannelId
+            AppSession.sharedStation?.let { shared ->
+                schedulesWorker.execute { runCatching { shared.select(activeChannelId) } }
+            }
+        }
         if (::playback.isInitialized) playback.suspend()
         super.onStop()
     }
 
     override fun onDestroy() {
+        AppSession.onSchedulesUpdated = null
+        activeControlsDialog?.dismiss()
         if (::playback.isInitialized) playback.release()
         schedulesWorker.shutdown()
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    /** If another device changed the active channel while this TV was stopped, follow it on resume. */
+    private fun syncRemoteSelectionOnResume() {
+        val shared = AppSession.sharedStation ?: return
+        schedulesWorker.execute {
+            val remoteId = runCatching { shared.selection() }.getOrNull() ?: return@execute
+            handler.post {
+                if (!started || isDestroyed) return@post
+                val currentId = playback.channel?.id ?: focused?.id
+                if (remoteId != currentId) {
+                    val target = grid.channels.firstOrNull { it.id == remoteId }
+                        ?: AppSession.channels.firstOrNull { it.id == remoteId }
+                    if (target != null) {
+                        AppSession.lastChannelId = target.id
+                        displaySettings.lastChannelId = target.id
+                        focused = target
+                        grid.select(target.id)
+                        playback.tune(target)
+                        showInfo()
+                    }
+                }
+            }
+        }
     }
 
     private fun rebuildSchedules() {
@@ -182,7 +227,7 @@ class GuideActivity : Activity() {
     }
 
     private fun applyChannelVisibility(channels: List<ChannelRuntime>, built: Map<Int, ChannelSchedule>) {
-        val previous = focused?.id
+        val previous = focused?.id ?: playback.channel?.id ?: AppSession.lastChannelId
         grid.channels = channels.filter { displaySettings.showOffAirChannels || built[it.id]?.nowPlaying != null }
         focused = grid.channels.firstOrNull { it.id == previous } ?: grid.channels.firstOrNull()
         focused?.let { grid.select(it.id) }
@@ -233,9 +278,9 @@ class GuideActivity : Activity() {
             val remaining = ((block.endUnix - now).coerceAtLeast(0) + 59) / 60
             section("${format.format(Date(block.startUnix * 1000))} – ${format.format(Date(block.endUnix * 1000))}" +
                 "   $remaining MIN LEFT\n", colour, .85f)
-            programmeProgress.progress = ((now - block.startUnix).coerceAtLeast(0) * 1000 /
+            programProgress.progress = ((now - block.startUnix).coerceAtLeast(0) * 1000 /
                 (block.endUnix - block.startUnix).coerceAtLeast(1)).toInt().coerceIn(0, 1000)
-        } else programmeProgress.progress = 0
+        } else programProgress.progress = 0
         scheduled?.entries?.filter { !it.block.isBumper && it.startUnix > now }?.take(2)?.forEachIndexed { i, next ->
             section("\n${if (i == 0) "UP NEXT" else "LATER"}  ${format.format(Date(next.startUnix * 1000))}  ${next.item.displayTitle}",
                 Color.LTGRAY, .8f)
@@ -285,14 +330,25 @@ class GuideActivity : Activity() {
         if (!value) grid.requestFocus()
     }
 
+    private fun stepChannel(delta: Int) {
+        val list = grid.channels
+        if (list.isEmpty()) return
+        val currentId = playback.channel?.id ?: focused?.id
+        val currentIdx = list.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
+        val next = list[Math.floorMod(currentIdx + delta, list.size)]
+        focused = next
+        grid.select(next.id)
+        playback.tune(next)
+        showInfo()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (::grid.isInitialized && event.action == KeyEvent.ACTION_DOWN && grid.userInteraction()) return true
         if (event.action == KeyEvent.ACTION_DOWN && ::playback.isInitialized) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_BACK -> {
                     if (fullscreen) { setFullscreen(false); return true }
-                    // Settings stays on Menu and the button above the first row. Back is for
-                    // going home, then out, as on tvOS (GuideExitAction).
+                    // Back returns to the playing channel first, then exits on a second press, as on tvOS.
                     return when (GuideExitAction.decide(playback.channel?.id, focused?.id)) {
                         is GuideExitAction.JumpToLiveChannel -> { returnToPlayingChannel(); true }
                         GuideExitAction.LetSystemHandle -> super.dispatchKeyEvent(event)
@@ -309,8 +365,21 @@ class GuideActivity : Activity() {
                     playback.setCaptions(displaySettings.captionsEnabled)
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_UP -> if (fullscreen) { showPlaybackControls(); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER -> if (fullscreen) {
+                KeyEvent.KEYCODE_CHANNEL_UP -> { stepChannel(-1); return true }
+                KeyEvent.KEYCODE_CHANNEL_DOWN -> { stepChannel(1); return true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> if (fullscreen) {
+                    showPlaybackControls()
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> if (fullscreen) {
+                    stepChannel(-1)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> if (fullscreen) {
+                    stepChannel(1)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> if (fullscreen) {
                     if (playback.player.playerError != null) playback.channel?.let { playback.tune(it, true) }
                     else showPlaybackControls()
                     return true
@@ -320,95 +389,366 @@ class GuideActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
-    private fun showSettings(returnChannelId: Int? = playback.channel?.id ?: focused?.id) {
+    /**
+     * Broadcast-style Now Playing HUD overlay. Replaces the stock system AlertDialog with a
+     * bottom-anchored CRT control deck featuring live program status and horizontal pill controls.
+     */
+    private fun showPlaybackControls() {
+        activeControlsDialog?.dismiss()
+        val dialog = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(0x66000000))
+
+        val autoHide = Runnable { if (dialog.isShowing) dialog.dismiss() }
+        fun bumpAutoHide() {
+            handler.removeCallbacks(autoHide)
+            handler.postDelayed(autoHide, 7000)
+        }
+
+        val outer = FrameLayout(this).apply {
+            setPadding(dp(48), dp(32), dp(48), dp(36))
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(28), dp(22), dp(28), dp(24))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(0xF20D0F18.toInt())
+                setStroke(dp(2), GrootBrand.CYAN)
+            }
+            isClickable = true
+        }
+
+        // Top row: Channel + Now Playing title on left, LIVE / PAUSED status badge on right
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val ch = playback.channel ?: focused
+        val chColor = ch?.let { runCatching { Color.parseColor(it.definition.colorHex) }.getOrNull() } ?: GrootBrand.CYAN
+        val titleStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val chLabel = label(
+            ch?.let { "CH ${it.number.toString().padStart(2, '0')}  •  ${it.name.uppercase()}" } ?: "NO CHANNEL",
+            14f, chColor
+        )
+        val item = playback.entry?.item ?: ch?.let { schedules[it.id]?.nowPlaying?.item }
+        val programTitle = label(
+            if (playback.entry?.block?.isBumper == true) "STATION BREAK"
+            else (item?.displayTitle ?: "LIVE BROADCAST"),
+            24f, Color.WHITE, accent = true
+        )
+        titleStack.addView(chLabel)
+        titleStack.addView(programTitle)
+        headerRow.addView(titleStack, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val statusBadge = label("", 16f, GrootBrand.CYAN, accent = true).apply {
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+        }
+        fun refreshStatusBadge() {
+            val isPaused = playback.paused
+            statusBadge.text = if (isPaused) "❚❚ PAUSED" else "● LIVE ON AIR"
+            statusBadge.setTextColor(if (isPaused) Color.rgb(255, 229, 0) else GrootBrand.CYAN)
+            statusBadge.background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(0xFF161B28.toInt())
+                setStroke(dp(1), if (isPaused) Color.rgb(255, 229, 0) else GrootBrand.CYAN)
+            }
+        }
+        refreshStatusBadge()
+        headerRow.addView(statusBadge)
+        card.addView(headerRow)
+
+        // Divider
+        card.addView(View(this).apply {
+            setBackgroundColor(0x3329F2FF)
+        }, LinearLayout.LayoutParams(-1, dp(1)).apply {
+            topMargin = dp(14)
+            bottomMargin = dp(16)
+        })
+
+        // Horizontal Pill Controls Row
+        val controlsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        fun addControlPill(initialText: String, onClick: (TextView) -> Unit): TextView {
+            val pill = makePillButton(initialText) { view ->
+                bumpAutoHide()
+                onClick(view)
+            }
+            val params = LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(12) }
+            controlsRow.addView(pill, params)
+            return pill
+        }
+
+        val playPauseBtn = addControlPill(if (playback.paused) "▶ PLAY" else "❚❚ PAUSE") { btn ->
+            playback.togglePause()
+            btn.text = if (playback.paused) "▶ PLAY" else "❚❚ PAUSE"
+            refreshStatusBadge()
+        }
+
+        addControlPill("● SYNC LIVE") {
+            playback.returnToLive()
+            returnToPlayingChannel()
+            dialog.dismiss()
+        }
+
+        addControlPill("CC: ${if (displaySettings.captionsEnabled) "ON" else "OFF"}") { btn ->
+            val next = !displaySettings.captionsEnabled
+            displaySettings.captionsEnabled = next
+            playback.setCaptions(next)
+            btn.text = "CC: ${if (next) "ON" else "OFF"}"
+        }
+
+        addControlPill("CRT 4:3: ${if (displaySettings.retroMode) "ON" else "OFF"}") { btn ->
+            val next = !displaySettings.retroMode
+            displaySettings.retroMode = next
+            applyRetroMode()
+            btn.text = "CRT 4:3: ${if (next) "ON" else "OFF"}"
+        }
+
+        addControlPill("QUALITY: ${displaySettings.streamQuality.label.uppercase()}") { btn ->
+            dialog.dismiss()
+            showStreamQuality {
+                btn.text = "QUALITY: ${displaySettings.streamQuality.label.uppercase()}"
+            }
+        }
+
+        if (playback.previousChannel != null) {
+            addControlPill("⇄ PREV CH") {
+                returnToPreviousChannel()
+                dialog.dismiss()
+            }
+        }
+
+        addControlPill("⚙ SETTINGS") {
+            val targetId = focused?.id ?: playback.channel?.id
+            dialog.dismiss()
+            showSettings(targetId)
+        }
+
+        if (fullscreen) {
+            addControlPill("▤ GUIDE") {
+                dialog.dismiss()
+                setFullscreen(false)
+            }
+        }
+
+        card.addView(controlsRow)
+        outer.addView(card, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        dialog.setContentView(outer)
+
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                bumpAutoHide()
+                if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    dialog.dismiss()
+                    return@setOnKeyListener true
+                }
+            }
+            false
+        }
+        dialog.setOnDismissListener {
+            handler.removeCallbacks(autoHide)
+            if (activeControlsDialog === dialog) activeControlsDialog = null
+        }
+
+        activeControlsDialog = dialog
+        dialog.show()
+        playPauseBtn.requestFocus()
+        bumpAutoHide()
+    }
+
+    /**
+     * Styled StaticGroot Settings deck. Remembers the exact channel row that was focused when
+     * Settings opened and restores focus to that row when dismissed.
+     */
+    private fun showSettings(returnChannelId: Int? = focused?.id ?: playback.channel?.id) {
         grid.crawlEnabled = false
         var returnTarget = returnChannelId
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(8), dp(24), dp(8))
+        val dialog = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(0xB3000000.toInt()))
+
+        val outer = FrameLayout(this).apply {
+            setPadding(dp(80), dp(36), dp(80), dp(36))
         }
-        content.addView(CheckBox(this).apply {
-            text = "Retro Mode (CRT effects and fullscreen 4:3 crop)"
-            isChecked = displaySettings.retroMode
-            setOnCheckedChangeListener { _, checked ->
-                displaySettings.retroMode = checked
-                applyRetroMode()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(28), dp(22), dp(28), dp(22))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(GrootBrand.BACKGROUND)
+                setStroke(dp(2), GrootBrand.CYAN)
             }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label("STATICGROOT SETTINGS", 26f, GrootBrand.CYAN, accent = true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        val closeBtn = makePillButton("DONE") { dialog.dismiss() }
+        header.addView(closeBtn)
+        panel.addView(header)
+
+        panel.addView(View(this).apply {
+            setBackgroundColor(0x3329F2FF)
+        }, LinearLayout.LayoutParams(-1, dp(1)).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(12)
         })
-        content.addView(CheckBox(this).apply {
-            text = "Show off-air channels"
-            isChecked = displaySettings.showOffAirChannels
-            setOnCheckedChangeListener { _, checked ->
-                displaySettings.showOffAirChannels = checked
-                applyChannelVisibility(AppSession.channels.sortedBy { it.number }, schedules)
-                grid.invalidate()
-                showInfo()
-                rebuildSchedules()
+
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        fun addRow(title: String, initialValue: String = "", onClick: (TextView) -> Unit): View {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setPadding(dp(18), dp(12), dp(18), dp(12))
             }
-        })
-        content.addView(Button(this).apply {
-            text = "Stream quality: ${displaySettings.streamQuality.label}"
-            setOnClickListener { showStreamQuality(this) }
-        })
-        content.addView(Button(this).apply {
-            text = "Time zone: ${timeZoneSummary()}"
-            setOnClickListener { showTimeZone(this) }
-        })
-        content.addView(Button(this).apply {
-            text = "Playback controls"
-            setOnClickListener { showPlaybackControls() }
-        })
-        content.addView(Button(this).apply {
-            text = "Return to playing channel"
-            setOnClickListener { returnTarget = playback.channel?.id; returnToPlayingChannel() }
-        })
-        content.addView(Button(this).apply {
-            text = "Previous channel"
-            isEnabled = playback.previousChannel != null
-            setOnClickListener { returnToPreviousChannel(); returnTarget = playback.channel?.id }
-        })
-        content.addView(Button(this).apply {
-            text = "Refresh commercials only"
-            setOnClickListener { refreshCommercials(this) }
-        })
-        content.addView(Button(this).apply {
-            text = "Shared schedule service"
-            setOnClickListener { showCompanionSettings() }
-        })
-        content.addView(Button(this).apply {
-            text = "Force regenerate schedules"
-            setOnClickListener {
-                AlertDialog.Builder(this@GuideActivity).setTitle("Regenerate station schedules?")
-                    .setMessage("Replaces today and the next two days on the shared service. Advertised times will change. Other TVs must restart to load the new lineup.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Regenerate") { _, _ ->
-                        startActivity(Intent(this@GuideActivity, MainActivity::class.java)
-                            .putExtra("force_regenerate", true))
-                        finish()
-                    }.show()
+            val titleView = label(title, 15f, Color.WHITE)
+            val valueView = label(initialValue, 15f, GrootBrand.CYAN)
+            row.addView(titleView, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(valueView)
+
+            fun styleRow(hasFocus: Boolean) {
+                row.background = GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(if (hasFocus) 0xFF1A2234.toInt() else GrootBrand.SURFACE)
+                    setStroke(dp(if (hasFocus) 2 else 1), if (hasFocus) GrootBrand.CYAN else 0x22FFFFFF)
+                }
+                titleView.setTextColor(if (hasFocus) Color.rgb(255, 229, 0) else Color.WHITE)
             }
-        })
-        content.addView(Button(this).apply {
-            text = "Retry playback"
-            setOnClickListener { playback.channel?.let { playback.tune(it, true) } }
-        })
-        content.addView(Button(this).apply {
-            text = "Sign out"
-            setOnClickListener {
-                SessionStore(this@GuideActivity).clearSession()
-                startActivity(Intent(this@GuideActivity, MainActivity::class.java)); finish()
+            styleRow(false)
+            row.setOnFocusChangeListener { _, hasFocus -> styleRow(hasFocus) }
+            row.setOnClickListener { onClick(valueView) }
+            row.setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN &&
+                    (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    onClick(valueView)
+                    true
+                } else false
             }
-        })
-        content.addView(Button(this).apply {
-            text = "About"
-            setOnClickListener {
-                AlertDialog.Builder(this@GuideActivity).setMessage(R.string.about_credit)
-                    .setPositiveButton("OK", null).show()
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+            return row
+        }
+
+        val firstRow = addRow(
+            "Retro Mode (CRT effects & fullscreen 4:3 crop)",
+            if (displaySettings.retroMode) "ON" else "OFF"
+        ) { valueView ->
+            val next = !displaySettings.retroMode
+            displaySettings.retroMode = next
+            valueView.text = if (next) "ON" else "OFF"
+            applyRetroMode()
+        }
+
+        addRow(
+            "Closed captions (subtitles)",
+            if (displaySettings.captionsEnabled) "ON" else "OFF"
+        ) { valueView ->
+            val next = !displaySettings.captionsEnabled
+            displaySettings.captionsEnabled = next
+            valueView.text = if (next) "ON" else "OFF"
+            playback.setCaptions(next)
+        }
+
+        addRow(
+            "Show off-air channels",
+            if (displaySettings.showOffAirChannels) "ON" else "OFF"
+        ) { valueView ->
+            val next = !displaySettings.showOffAirChannels
+            displaySettings.showOffAirChannels = next
+            valueView.text = if (next) "ON" else "OFF"
+            applyChannelVisibility(AppSession.channels.sortedBy { it.number }, schedules)
+            grid.invalidate()
+            showInfo()
+            rebuildSchedules()
+        }
+
+        addRow("Stream quality", displaySettings.streamQuality.label) { valueView ->
+            showStreamQuality { valueView.text = displaySettings.streamQuality.label }
+        }
+
+        addRow("Time zone", timeZoneSummary()) { valueView ->
+            showTimeZone { valueView.text = timeZoneSummary() }
+        }
+
+        addRow("Playback controls HUD", "OPEN") {
+            dialog.dismiss()
+            showPlaybackControls()
+        }
+
+        addRow("Return to playing channel", playback.channel?.let { "CH ${it.number}" } ?: "") {
+            returnTarget = playback.channel?.id
+            returnToPlayingChannel()
+            dialog.dismiss()
+        }
+
+        if (playback.previousChannel != null) {
+            addRow("Previous channel", playback.previousChannel?.let { "CH ${it.number} ${it.name}" }.orEmpty()) {
+                returnToPreviousChannel()
+                returnTarget = playback.channel?.id
+                dialog.dismiss()
             }
-        })
-        val dialog = AlertDialog.Builder(this).setTitle("StaticGroot Settings").setView(
-            ScrollView(this).apply { addView(content) })
-            .setPositiveButton("Done", null).create()
+        }
+
+        addRow("Refresh commercials only", "${AppSession.commercials.size} clips") { valueView ->
+            refreshCommercials(valueView)
+        }
+
+        addRow("Shared schedule service", "CONFIGURE") {
+            showCompanionSettings()
+        }
+
+        addRow("Force regenerate schedules", "REBUILD 3 DAYS") {
+            AlertDialog.Builder(this@GuideActivity).setTitle("Regenerate station schedules?")
+                .setMessage("Replaces today and the next two days on the shared service. Advertised times will change. Other TVs must restart to load the new lineup.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Regenerate") { _, _ ->
+                    dialog.dismiss()
+                    startActivity(Intent(this@GuideActivity, MainActivity::class.java)
+                        .putExtra("force_regenerate", true))
+                    finish()
+                }.show()
+        }
+
+        addRow("Retry playback", "RETUNE") {
+            playback.channel?.let { playback.tune(it, true) }
+            dialog.dismiss()
+        }
+
+        addRow("About StaticGroot", "INFO") {
+            AlertDialog.Builder(this@GuideActivity).setMessage(R.string.about_credit)
+                .setPositiveButton("OK", null).show()
+        }
+
+        addRow("Sign out", "LOG OUT") {
+            dialog.dismiss()
+            SessionStore(this@GuideActivity).clearSession()
+            startActivity(Intent(this@GuideActivity, MainActivity::class.java)); finish()
+        }
+
+        val scroll = ScrollView(this).apply {
+            isScrollbarFadingEnabled = false
+            addView(list)
+        }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        outer.addView(panel, FrameLayout.LayoutParams(-1, -1))
+        dialog.setContentView(outer)
+
         dialog.setOnDismissListener {
             if (!isFinishing && !isDestroyed) {
                 val target = grid.channels.firstOrNull { it.id == returnTarget }
@@ -423,10 +763,11 @@ class GuideActivity : Activity() {
             }
         }
         dialog.show()
+        firstRow.requestFocus()
     }
 
     /** Picks a rung of the quality ladder. Applies to the next stream, so the one playing is retuned. */
-    private fun showStreamQuality(button: Button) {
+    private fun showStreamQuality(onUpdated: () -> Unit = {}) {
         val levels = io.github.madmax3553.staticgroot.jellyfin.StreamQuality.entries
         val labels = levels.map { "${it.label}\n${it.detail}" }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Stream quality")
@@ -435,7 +776,7 @@ class GuideActivity : Activity() {
                 if (chosen != displaySettings.streamQuality) {
                     displaySettings.streamQuality = chosen
                     AppSession.client?.streamQuality = chosen
-                    button.text = "Stream quality: ${chosen.label}"
+                    onUpdated()
                     playback.channel?.let { playback.tune(it, true) }
                 }
                 dialog.dismiss()
@@ -448,7 +789,7 @@ class GuideActivity : Activity() {
         return if (chosen == NorthAmericaTimeZone.AUTO) "Auto ($resolved)" else chosen.label
     }
 
-    private fun showTimeZone(button: Button) {
+    private fun showTimeZone(onUpdated: () -> Unit = {}) {
         val zones = NorthAmericaTimeZone.entries
         val labels = zones.map { z ->
             if (z == NorthAmericaTimeZone.AUTO) "Auto (${z.resolve(this, AppSession.stationZone).id})" else z.label
@@ -459,37 +800,11 @@ class GuideActivity : Activity() {
                 if (chosen != displaySettings.timeZone) {
                     displaySettings.timeZone = chosen
                     grid.displayTimeZone = displaySettings.displayTimeZone(AppSession.stationZone)
-                    button.text = "Time zone: ${timeZoneSummary()}"
+                    onUpdated()
                     showInfo()
                 }
                 dialog.dismiss()
             }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun showPlaybackControls() {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        val dialog = AlertDialog.Builder(this).setTitle("Playback controls").setView(content)
-            .setPositiveButton("Done", null).create()
-        content.addView(Button(this).apply {
-            text = if (playback.paused) "Play" else "Pause"
-            setOnClickListener { playback.togglePause(); text = if (playback.paused) "Play" else "Pause" }
-        })
-        content.addView(Button(this).apply {
-            text = "Return to live"
-            setOnClickListener { playback.returnToLive(); returnToPlayingChannel(); dialog.dismiss() }
-        })
-        content.addView(CheckBox(this).apply {
-            text = "Closed captions (available subtitle tracks)"
-            isChecked = displaySettings.captionsEnabled
-            setOnCheckedChangeListener { _, checked ->
-                displaySettings.captionsEnabled = checked
-                playback.setCaptions(checked)
-            }
-        })
-        dialog.show()
     }
 
     private fun returnToPlayingChannel() {
@@ -507,22 +822,20 @@ class GuideActivity : Activity() {
         showInfo()
     }
 
-    private fun refreshCommercials(button: Button) {
+    private fun refreshCommercials(statusLabel: TextView) {
         if (refreshingCommercials) return
         val client = AppSession.client ?: return
         refreshingCommercials = true
-        button.isEnabled = false
-        button.text = "Refreshing commercials…"
+        statusLabel.text = "REFRESHING…"
         Thread {
             val result = runCatching { client.loadCommercials() }
             handler.post {
                 refreshingCommercials = false
                 if (isDestroyed) return@post
-                button.isEnabled = true
                 result.onSuccess {
                     AppSession.commercials = it
-                    button.text = "Commercials refreshed: ${it.size} clips"
-                }.onFailure { button.text = "Refresh failed. Try again." }
+                    statusLabel.text = "${it.size} CLIPS"
+                }.onFailure { statusLabel.text = "FAILED — RETRY" }
             }
         }.start()
     }
@@ -553,6 +866,35 @@ class GuideActivity : Activity() {
             }
         }
         dialog.show()
+    }
+
+    private fun makePillButton(textValue: String, onClick: (TextView) -> Unit): TextView = TextView(this).apply {
+        text = textValue
+        textSize = 13f
+        typeface = resources.getFont(R.font.dmmono_regular)
+        gravity = Gravity.CENTER
+        isFocusable = true
+        isFocusableInTouchMode = true
+        setPadding(dp(16), dp(10), dp(16), dp(10))
+        fun applyFocusStyle(focused: Boolean) {
+            setTextColor(if (focused) Color.rgb(255, 229, 0) else GrootBrand.CYAN)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(if (focused) 0xFF1A2234.toInt() else GrootBrand.SURFACE)
+                setStroke(dp(if (focused) 2 else 1), if (focused) GrootBrand.CYAN else 0x4429F2FF)
+            }
+        }
+        applyFocusStyle(false)
+        setOnFocusChangeListener { _, hasFocus -> applyFocusStyle(hasFocus) }
+        setOnClickListener { onClick(this) }
+        setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN &&
+                (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+            ) {
+                onClick(this)
+                true
+            } else false
+        }
     }
 
     private fun label(value: String, size: Float, colour: Int, accent: Boolean = false) = TextView(this).apply {

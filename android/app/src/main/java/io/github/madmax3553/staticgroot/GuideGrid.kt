@@ -99,11 +99,19 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         var reveal = GuideNav.Reveal.DOWN
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> {
-                index = GuideNav.previous(index) ?: run { openSettings(); return true }
+                index = GuideNav.previous(index, channels.size)
                 reveal = GuideNav.Reveal.UP
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> { index = GuideNav.next(index, channels.size); reveal = GuideNav.Reveal.DOWN }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { slotOffset = (slotOffset - 1).coerceAtLeast(0); invalidate(); return true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (slotOffset > 0) {
+                    slotOffset -= 1
+                    invalidate()
+                } else {
+                    openSettings()
+                }
+                return true
+            }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { slotOffset = (slotOffset + 1).coerceAtMost(44); invalidate(); return true }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { tune(channels[index]); return true }
             else -> return super.onKeyDown(keyCode, event)
@@ -124,7 +132,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         val column = 220f * scale
         val header = 60f * scale
         val rowHeight = (height - header) / 5f
-        val programmeWidth = width - column
+        val programWidth = width - column
         val from = windowStart + slotOffset * 1800
         val to = from + 7200
         canvas.drawColor(GrootBrand.BACKGROUND)
@@ -136,7 +144,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         text(canvas, "CHANNEL", 20f * scale, header * .66f, 22f * scale, Color.GRAY, accent)
         for (slot in 0..3) {
             text(canvas, time.format(Date((from + slot * 1800) * 1000)),
-                column + programmeWidth * slot / 4 + 20 * scale, header * .66f,
+                column + programWidth * slot / 4 + 20 * scale, header * .66f,
                 26f * scale, Color.WHITE, accent)
         }
         canvas.save()
@@ -161,8 +169,8 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
             if (entries.isEmpty()) text(canvas, "OFF AIR", column + 20 * scale,
                 top + rowHeight * .6f, 24 * scale, Color.DKGRAY, accent)
             for (entry in entries) {
-                val left = column + ((maxOf(from, entry.startUnix) - from) / 7200f) * programmeWidth
-                val right = column + ((minOf(to, entry.endUnix) - from) / 7200f) * programmeWidth
+                val left = column + ((maxOf(from, entry.startUnix) - from) / 7200f) * programWidth
+                val right = column + ((minOf(to, entry.endUnix) - from) / 7200f) * programWidth
                 paint.color = Color.rgb(55, 55, 70)
                 canvas.drawRect(right - scale, top, right, bottom, paint)
                 clippedText(canvas, if (entry.block.isBumper) "STATION BREAK" else entry.item.displayTitle, left + 16 * scale, top + rowHeight * .43f,
@@ -181,7 +189,7 @@ class GuideGrid(context: Context, private val selected: (ChannelRuntime) -> Unit
         val now = System.currentTimeMillis() / 1000
         if (now in from..to) {
             paint.color = GrootBrand.CYAN
-            val x = column + (now - from) / 7200f * programmeWidth
+            val x = column + (now - from) / 7200f * programWidth
             canvas.drawRect(x, header, x + 2 * scale, height.toFloat(), paint)
         }
     }

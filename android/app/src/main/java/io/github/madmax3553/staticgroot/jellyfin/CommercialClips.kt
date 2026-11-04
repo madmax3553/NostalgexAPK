@@ -1,6 +1,9 @@
 package io.github.madmax3553.staticgroot.jellyfin
 
-/** Precise seconds, not rounded programme minutes: short ads must remain playable. */
+import kotlinx.serialization.Serializable
+
+/** Precise seconds, not rounded program minutes: short ads must remain playable. */
+@Serializable
 data class CommercialClip(val id: String, val title: String, val durationSeconds: Long)
 
 object CommercialClips {

@@ -2,7 +2,7 @@ package io.github.madmax3553.staticgroot.schedule
 
 import io.github.madmax3553.staticgroot.channels.MediaType
 
-/** Generation-only, conservative optimizer: swap equal-length series/programme blocks.
+/** Generation-only, conservative optimizer: swap equal-length series/program blocks.
  * Equal lengths preserve clock alignment, day coverage and all internal break offsets.
  * Published channels passed as locked are scoring references, never modified.
  */
@@ -12,7 +12,7 @@ object GenerationReshuffler {
         val start get() = blocks.first().startUnix
         val end get() = blocks.last().endUnix
         val duration get() = end - start
-        val programmes get() = blocks.filterNot { it.isBumper }
+        val programs get() = blocks.filterNot { it.isBumper }
     }
 
     private fun identity(block: Block): String = if (block.item.type == MediaType.EPISODE)
@@ -83,16 +83,16 @@ object GenerationReshuffler {
             for (a in groups.indices) for (b in a + 1 until groups.size) {
                 if (++attempts > 80 || currentScore == 0L) break
                 val x = groups[a]; val y = groups[b]
-                if (x.duration != y.duration || x.programmes.isEmpty() || y.programmes.isEmpty()) continue
+                if (x.duration != y.duration || x.programs.isEmpty() || y.programs.isEmpty()) continue
                 // Paired TV blocks open hourly; never relocate them to a half-hour.
                 fun aligned(run: Run, destination: Long): Boolean =
-                    run.programmes.first().item.type != MediaType.EPISODE || (destination - dayStart) % 3600 == 0L
+                    run.programs.first().item.type != MediaType.EPISODE || (destination - dayStart) % 3600 == 0L
                 if (!aligned(x, y.start) || !aligned(y, x.start)) continue
                 val candidate = groups.flatMapIndexed { i, run -> when (i) {
                     a -> move(y, x.start); b -> move(x, y.start); else -> run.blocks
                 } }
-                val programmes = candidate.filter { !it.isBumper && it.mediaOffsetSeconds == 0L }
-                if (programmes.zipWithNext().any { (p, q) -> p.item.type == MediaType.MOVIE &&
+                val programs = candidate.filter { !it.isBumper && it.mediaOffsetSeconds == 0L }
+                if (programs.zipWithNext().any { (p, q) -> p.item.type == MediaType.MOVIE &&
                     q.item.type == MediaType.MOVIE && identity(p) == identity(q) }) continue
                 val candidateMix = mix(candidate, dayStart)
                 val candidateScore = score(candidateMix, others)

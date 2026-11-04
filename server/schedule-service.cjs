@@ -102,7 +102,7 @@ class StationStore {
       if (typeof b.itemId !== 'string' || !Number.isSafeInteger(b.startUnix) || !Number.isSafeInteger(b.endUnix) ||
           b.endUnix <= b.startUnix || !Number.isSafeInteger(b.mediaOffsetSeconds) || b.mediaOffsetSeconds < 0 ||
           typeof b.isBumper !== 'boolean' || typeof b.isMidBreak !== 'boolean' ||
-          (previousEnd !== null && b.startUnix !== previousEnd)) throw new Error('Invalid programme timing');
+          (previousEnd !== null && b.startUnix !== previousEnd)) throw new Error('Invalid program timing');
       if (!b.isBumper && b.mediaOffsetSeconds === 0 && b.movieIdentity) {
         if (lastMovie === b.movieIdentity && b.startUnix - lastMovieEnd < 300)
           throw new Error('Movie repeated back-to-back');

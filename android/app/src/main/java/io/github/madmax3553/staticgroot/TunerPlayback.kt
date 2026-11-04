@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class TunerPlayback(context: Context, private val status: (String) -> Unit,
     private val changed: () -> Unit) {
+    private val appContext = context.applicationContext
     private val http = DefaultHttpDataSource.Factory()
         .setConnectTimeoutMs(10000).setReadTimeoutMs(15000)
         .setDefaultRequestProperties(AppSession.client?.playbackHeaders().orEmpty())
@@ -184,8 +185,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         if (!active || released) return
         val now = System.currentTimeMillis() / 1000
         val schedule = AppSession.scheduleFor(target, now)
-        val programme = schedule?.nowPlaying
-        if (!force && channel?.id == target.id && entry?.block == programme?.block &&
+        val program = schedule?.nowPlaying
+        if (!force && channel?.id == target.id && entry?.block == program?.block &&
             (pending || player.playbackState != Player.STATE_IDLE)) return
         generation++
         paused = false
@@ -197,22 +198,23 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         if (channel?.id != target.id) previousChannel = channel
         channel = target
         AppSession.lastChannelId = target.id
+        DisplaySettings(appContext).lastChannelId = target.id
         AppSession.sharedStation?.let { shared -> cleanup.execute { runCatching { shared.select(target.id) } } }
-        entry = programme
+        entry = program
         changed()
-        if (programme == null) {
-            status("OFF AIR\nNo programmes available on this channel")
+        if (program == null) {
+            status("OFF AIR\nNo programs available on this channel")
             return
         }
-        resolve(programme, schedule.elapsedSeconds, token)
+        resolve(program, schedule.elapsedSeconds, token)
     }
 
-    private fun resolve(programme: ScheduleEntry, elapsed: Long, token: Int) {
-        if (programme.block.isBumper) {
+    private fun resolve(program: ScheduleEntry, elapsed: Long, token: Int) {
+        if (program.block.isBumper) {
             pending = false
             player.stop()
             bumperDeadline = android.os.SystemClock.elapsedRealtime() +
-                (programme.endUnix - programme.startUnix - elapsed).coerceAtLeast(0) * 1000
+                (program.endUnix - program.startUnix - elapsed).coerceAtLeast(0) * 1000
             ads.clear()
             ads.addAll(io.github.madmax3553.staticgroot.jellyfin.CommercialClips.fit(
                 AppSession.commercials.shuffled(), bumperRemainingSeconds))
@@ -224,11 +226,11 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             return
         }
         handler.removeCallbacks(bumperTick)
-        // A disc-stacked movie is one programme over several files: find the file holding this
+        // A disc-stacked movie is one program over several files: find the file holding this
         // offset. Everything else resolves to part zero at the same offset it always did.
-        val item = programme.item
+        val item = program.item
         val at = io.github.madmax3553.staticgroot.channels.MultiPartStack.locate(
-            item.parts, programme.block.mediaOffsetSeconds + elapsed)
+            item.parts, program.block.mediaOffsetSeconds + elapsed)
         val sourceId = if (item.parts.size > 1) item.parts[at.partIndex].sourceId else item.mediaSourceId
         loadStream(item.id, at.seekSeconds, token, sourceId, at.partIndex, at.partStartSeconds)
     }
@@ -302,7 +304,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         }
     }
 
-    /** Natural end joins the next programme from its beginning, as on tvOS. */
+    /** Natural end joins the next program from its beginning, as on tvOS. */
     private fun advance() {
         val target = channel ?: return
         val current = entry ?: return
@@ -316,7 +318,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         endSession()
         entry = next
         changed()
-        val elapsed = io.github.madmax3553.staticgroot.schedule.ProgrammeBoundary.elapsedInBreak(
+        val elapsed = io.github.madmax3553.staticgroot.schedule.ProgramBoundary.elapsedInBreak(
             next.block, System.currentTimeMillis() / 1000)
         resolve(entry!!, elapsed, generation)
     }
@@ -380,7 +382,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                 val target = channel
                 val next = target?.let { AppSession.scheduleFor(it, current.endUnix) }
                     ?.entries?.firstOrNull { it.startUnix >= current.endUnix }
-                if (io.github.madmax3553.staticgroot.schedule.ProgrammeBoundary.shouldInterrupt(
+                if (io.github.madmax3553.staticgroot.schedule.ProgramBoundary.shouldInterrupt(
                         current.block, next?.block, partStartSeconds + player.currentPosition / 1000)) advance()
             }
             if (player.isPlaying) Log.d("StaticGroot", "VIDEO playing positionMs=${player.currentPosition} frame=$firstFrame")

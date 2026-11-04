@@ -74,6 +74,6 @@ class BumperView(context: Context) : View(context) {
             line(title, .67f + index * .075f, 18f, Color.WHITE)
         }
         val countdown = "%02d:%02d".format(remainingSeconds / 60, remainingSeconds % 60)
-        line("NEXT PROGRAMME IN $countdown", .94f, 20f, GrootBrand.CYAN, true)
+        line("NEXT PROGRAM IN $countdown", .94f, 20f, GrootBrand.CYAN, true)
     }
 }

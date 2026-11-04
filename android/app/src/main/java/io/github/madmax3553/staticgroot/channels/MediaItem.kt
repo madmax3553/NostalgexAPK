@@ -1,10 +1,13 @@
 package io.github.madmax3553.staticgroot.channels
 
+import kotlinx.serialization.Serializable
+
 /*
  * The fields of tvOS PlexMediaItem that channel rules read. Playback, artwork and
  * server routing fields come with the server clients, not with the filter.
  */
 
+@Serializable
 enum class MediaType(val raw: String) {
     MOVIE("movie"),
     EPISODE("episode");
@@ -15,6 +18,7 @@ enum class MediaType(val raw: String) {
     }
 }
 
+@Serializable
 enum class LibrarySource(val raw: String) {
     MOVIE("movie"),
     TV("tv"),
@@ -25,6 +29,7 @@ enum class LibrarySource(val raw: String) {
     }
 }
 
+@Serializable
 data class MediaItem(
     val id: String,
     val title: String,

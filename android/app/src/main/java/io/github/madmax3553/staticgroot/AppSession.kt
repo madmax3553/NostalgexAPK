@@ -22,10 +22,15 @@ object AppSession {
     @Volatile var scheduler: ChannelScheduler? = null
     @Volatile var sharedStation: io.github.madmax3553.staticgroot.schedule.SharedStation? = null
     @Volatile var lastChannelId: Int? = null
+    @Volatile var onSchedulesUpdated: (() -> Unit)? = null
     var stationZone: ZoneId = ZoneId.systemDefault()
 
     fun init(historyDir: File) {
         scheduler = ChannelScheduler(stationZone, FileDayHistory(historyDir))
+    }
+
+    fun notifySchedulesUpdated() {
+        onSchedulesUpdated?.invoke()
     }
 
     /** What channel [runtime] is showing at [nowUnix]. Null when its pool is empty. */

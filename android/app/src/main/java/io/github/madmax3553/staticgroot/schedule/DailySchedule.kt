@@ -16,7 +16,7 @@ import java.time.ZonedDateTime
  * install the seam rules see no history.
  */
 
-/** One programme block on a channel's day. */
+/** One program block on a channel's day. */
 data class Block(val item: MediaItem, val startUnix: Long, val endUnix: Long,
     val isBumper: Boolean = false, val mediaOffsetSeconds: Long = 0,
     val isMidBreak: Boolean = false) {
@@ -65,7 +65,7 @@ object LocalDays {
 
 object DailyPacker {
 
-    /** Android station breaks: retain programme order and pad to local half-hour slots.
+    /** Android station breaks: retain program order and pad to local half-hour slots.
      * The bumper carries the following item for its coming-next card, never for playback.
      */
     fun withBumpers(blocks: List<Block>, dayStart: Long, seconds: Long = 30, channelId: Int = 0): List<Block> {
@@ -116,7 +116,7 @@ object DailyPacker {
             }
             if (index + 1 >= ordered.size) break
             // The day ends at 3 am, where a long station break is fine and a film cut off mid-scene
-            // is not. Only start a programme that airs whole before the day ends. If the next one
+            // is not. Only start a program that airs whole before the day ends. If the next one
             // would not fit, pull a later one that does forward (judged against the latest a
             // break can push its start); if none fits, the day ends on a break.
             val latest = cursor + StationTiming.MAX_BREAK_SECONDS
@@ -148,7 +148,7 @@ object DailyPacker {
         return result
     }
 
-    /** True when the whole programme, with its mid break, airs between [start] and [end]. */
+    /** True when the whole program, with its mid break, airs between [start] and [end]. */
     internal fun fitsDay(block: Block, start: Long, end: Long): Boolean {
         val runtime = block.item.duration * 60L
         val total = runtime + if (runtime > 1800) 60 else 0
@@ -278,10 +278,10 @@ data class ChannelSchedule(
     val entries: List<ScheduleEntry>,
     val nowPlaying: ScheduleEntry?,
     val upNext: ScheduleEntry?,
-    /** Seconds into the current programme. */
+    /** Seconds into the current program. */
     val elapsedSeconds: Long,
 ) {
-    /** True while [nowUnix] is inside the current programme. A stale schedule fails this. */
+    /** True while [nowUnix] is inside the current program. A stale schedule fails this. */
     fun isCurrent(nowUnix: Long): Boolean {
         val np = nowPlaying ?: return false
         return np.startUnix <= nowUnix && nowUnix < np.endUnix
@@ -316,7 +316,7 @@ class ChannelScheduler(
         return dayCache.getOrPut(key) {
             val yesterdayStart = dayStart - 86400
             val yKey = LocalDays.dayKey(yesterdayStart, zone)
-            val programmes = DailyPacker.packDay(
+            val programs = DailyPacker.packDay(
                 pool = pool.filter { it.duration > 0 },
                 dayStartUnix = dayStart,
                 dayNumber = LocalDays.dayNumber(unix, zone),
@@ -325,7 +325,7 @@ class ChannelScheduler(
                 yesterdayAiredKeys = history.airedKeys(channelId, yKey),
                 yesterdayLastItemId = history.lastAired(channelId, yKey),
             )
-            val packed = DailyPacker.withBumpers(programmes, dayStart, channelId = channelId)
+            val packed = DailyPacker.withBumpers(programs, dayStart, channelId = channelId)
             history.record(channelId, LocalDays.dayKey(unix, zone), packed.filterNot { it.isBumper }.map { it.item.id })
             packed
         }

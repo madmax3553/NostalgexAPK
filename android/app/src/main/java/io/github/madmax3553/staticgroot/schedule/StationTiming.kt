@@ -5,9 +5,9 @@ import io.github.madmax3553.staticgroot.channels.MediaType
 /**
  * Movies use quarter-hours; TV uses half-hours, with repeated-show blocks opening hourly. A break
  * never runs past [MAX_BREAK_SECONDS], though: when the next grid line is further away than that
- * (a 46 minute episode, a 60 minute episode against a half-hour grid), the next programme opens on
+ * (a 46 minute episode, a 60 minute episode against a half-hour grid), the next program opens on
  * the next 5 minute mark instead. Measured on published days before this rule, 213 of 5,282 breaks
- * ran 20 to 60 minutes, all of them TV episodes pushed to the next :00 or :30. Programmes that end
+ * ran 20 to 60 minutes, all of them TV episodes pushed to the next :00 or :30. Programs that end
  * soon enough before a grid line still land on it, so the schedule re-syncs.
  */
 object StationTiming {
@@ -15,7 +15,7 @@ object StationTiming {
     private const val FINE_GRID = 300L
 
     /**
-     * Shifts a channel's whole grid by a multiple of 5 minutes, so that programmes on different
+     * Shifts a channel's whole grid by a multiple of 5 minutes, so that programs on different
      * channels start (and their breaks end) at different times. Without it every channel snaps to
      * the same :00 and :30, and channels with the same runtimes all go to break together.
      */

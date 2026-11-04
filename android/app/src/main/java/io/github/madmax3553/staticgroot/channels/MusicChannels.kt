@@ -6,7 +6,7 @@ package io.github.madmax3553.staticgroot.channels
  *
  * Not yet ported: the daily schedule. A pool says what a channel may show. It does not say
  * what is on now. Until the schedule lands, the caller must not present a pool entry as the
- * programme that is on.
+ * program that is on.
  */
 data class ChannelPool(
     val channel: ChannelDefinition,

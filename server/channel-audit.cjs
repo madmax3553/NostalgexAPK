@@ -29,7 +29,7 @@ function auditChannels(channels, manifests, minimumShared = 3) {
         sharedItems: shared, uniqueA: a.size - shared, uniqueB: b.size - shared,
         coverageA: +coverageA.toFixed(3), coverageB: +coverageB.toFixed(3),
         jaccard: +jaccard.toFixed(3),
-        // Recommendation only. Distinct editorial rules and programmes still need review.
+        // Recommendation only. Distinct editorial rules and programs still need review.
         candidate: coverageA >= .9 && coverageB >= .9 ? 'near-duplicate' :
           coverageA >= .95 || coverageB >= .95 ? 'mostly-contained' : 'overlap',
       });

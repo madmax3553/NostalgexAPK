@@ -50,15 +50,15 @@ On each TV, Settings > Shared schedule service:
 4. Sign into the same Jellyfin server and user on each TV.
 
 The first TV publishes the channel definitions, station time zone and full days.
-Subsequent TVs use that setup and the same published programmes. A changed device
+Subsequent TVs use that setup and the same published programs. A changed device
 library or app restart cannot overwrite an already-published day. Tune a channel
-on one TV and the next launch on another selects it, joining the live programme
+on one TV and the next launch on another selects it, joining the live program
 at the station-clock position. This is live-channel continuity, not resuming a
 paused movie from a private bookmark.
 
 Published blocks include breaks and content offsets. If an item disappears from
 the library or the user loses access, loading reports it rather than silently
-substituting a different advertised programme.
+substituting a different advertised program.
 
 ## Force regeneration
 
@@ -122,7 +122,7 @@ the service key controls access. The service never receives the Jellyfin login t
 60% two-hour series-airtime comparison. See `docs/EPISODE-PROGRAMMING.md` for the
 metric and command. Android uploads the catalog through the authenticated
 `POST /v1/stations/{station}/catalog` endpoint. Catalog refresh does not replace
-published programme times. No automatic channel merging is implemented.
+published program times. No automatic channel merging is implemented.
 
 The service stores observations independently of schedule generations. Each record
 is keyed by item ID, source freshness fingerprint (Jellyfin ETag/source/size/runtime)

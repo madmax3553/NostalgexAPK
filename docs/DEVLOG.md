@@ -3,6 +3,52 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-03 (warm launch snapshot, program spelling, EPG wrap, and HUD controls)
+
+**Why.**
+1. Cold launches when a published schedule was already available took 8.2s on the Sony
+   Android TV and 12.3s on the Fire TV Stick before the guide appeared: 4.3s to 5.5s
+   re-downloading the entire Jellyfin library on every launch, 1.9s rebuilding all channel
+   pools synchronously, and 0.96s to 1.15s fetching 66 channel-days one by one on a single
+   thread.
+2. UI copy and code mixed British `"programme"` with American `"program"`.
+3. Scrolling Down past the last channel wrapped to Channel 1, but pressing Up from Channel 1
+   jumped out of the EPG into Settings, so overshooting the bottom or top row by one press
+   forced the user into Settings and back to Channel 1.
+4. Playback controls and Settings used unstyled default system AlertDialogs, and the last
+   tuned channel was not persisted locally on stop or re-synced on resume across devices.
+
+**Changed.** StaticGroot 0.1.35 (36).
+- Replaced `"programme"` / `"programmes"` with `"program"` / `"programs"` across Android UI
+  copy, logs, comments, server validation/docs, and renamed `ProgrammeBoundary` to
+  `ProgramBoundary`.
+- Added `LaunchSnapshotStore` (`filesDir/launch_snapshot.json`) persisting the mapped
+  library, commercials, active channel definitions, last channel ID, and published day blocks
+  keyed by station ID and companion schedule generation.
+- Added a two-stage warm launch in `MainActivity`: when a snapshot exists and a schedule is
+  available (`!force_regenerate`), `tryWarmLaunch` resolves the active channel from
+  `SharedStation.selection()` (falling back to local `DisplaySettings.lastChannelId`) and
+  loads today's window for the target channel and its visible EPG rows first, opening
+  `GuideActivity` immediately while `completeWarmLaunchInBackground` loads offscreen
+  channels, day +2, and any newly rolled-over broadcast day in the background.
+- Parallelized cold-start published day fetches across the worker pool, skipped `countItems`
+  on non-music movie sections, skipped `GenerationReshuffler.optimize` when all channels are
+  already locked, and moved `publishCatalog` off the critical launch path.
+- Persisted `lastChannelId` in `DisplaySettings` and pushed `SharedStation.select` on tune
+  and `GuideActivity.onStop`, plus re-checked `SharedStation.selection()` on `onStart` so
+  switching TVs resumes on the last channel watched.
+- Made `GuideNav.previous(index, size)` wrap circularly in both directions and moved Settings
+  access from Up-at-row-0 to Left-at-live-column (`slotOffset == 0`) or Menu, restoring focus
+  to the exact channel row when Settings closes.
+- Replaced the stock playback controls and Settings AlertDialogs in `GuideActivity` with
+  themed `GrootBrand` CRT overlays and added Left/Right channel stepping in fullscreen.
+
+**Half-done.** The very first launch after installing 0.1.35 still runs a cold scan to write
+the initial `launch_snapshot.json`; subsequent launches use the warm fast path.
+
+**Next.** Push 0.1.35 (36) to the Sony Android TV and Fire TV Stick and measure warm launch
+times from `logcat`.
+
 ## 2026-11-03 (StaticGroot launcher icon and Android TV banner)
 
 **Why.** The Android app still had its initial scaffold artwork: a plain white rectangle on

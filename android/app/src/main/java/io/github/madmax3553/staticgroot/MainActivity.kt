@@ -253,6 +253,17 @@ class MainActivity : Activity() {
      * result can be traced to the server's item types.
      */
     private fun loadLibrary(client: JellyfinClient) {
+        val launchStartMs = System.currentTimeMillis()
+        val force = intent.getBooleanExtra("force_regenerate", false)
+        val stationId = runCatching { client.stationIdentity() }.getOrNull()
+        val snapshotStore = io.github.madmax3553.staticgroot.schedule.LaunchSnapshotStore(File(filesDir, "launch_snapshot.json"))
+        if (!force && stationId != null) {
+            val snapshot = snapshotStore.load(stationId)
+            if (snapshot != null && tryWarmLaunch(client, stationId, snapshot, snapshotStore, launchStartMs)) {
+                return
+            }
+        }
+
         runOnUiThread { status.text = "Loading libraries..." }
 
         val items = ArrayList<MediaItem>()
@@ -275,9 +286,8 @@ class MainActivity : Activity() {
                 continue
             }
             val isMusic = section.type == "musicvideo"
-            val movieCount = client.countItems(section.id, "Movie")
-            val musicVideoCount = client.countItems(section.id, "MusicVideo")
-            Log.i(TAG, "  count Movie=$movieCount MusicVideo=$musicVideoCount")
+            val musicVideoCount = if (isMusic) client.countItems(section.id, "MusicVideo") else 0
+            Log.i(TAG, "  isMusic=$isMusic MusicVideo=$musicVideoCount")
 
             val raw = client.loadMovies(section.id, includeItemTypes = JellyfinMapping.itemTypesFor(isMusic, musicVideoCount))
             val mapped = raw.mapNotNull { JellyfinMapping.toMediaItem(it, isMusicSection = isMusic) }
@@ -289,7 +299,9 @@ class MainActivity : Activity() {
         // cache runs in the background once the guide is up, so it never delays a launch.
         val musicStore = MusicEnrichmentStore(File(filesDir, "music_enrichment_cache.json"))
         val cachedMusic = musicStore.load()
-        for (i in items.indices) items[i] = MusicEnrichmentService.apply(listOf(items[i]), cachedMusic).first()
+        if (cachedMusic.isNotEmpty()) {
+            for (i in items.indices) items[i] = MusicEnrichmentService.apply(listOf(items[i]), cachedMusic).first()
+        }
         Log.i(TAG, "MUSIC cached rows=${cachedMusic.size} musicVideos=${items.count { it.isMusicVideo }}")
 
         val enrichment = enrichItems(items)
@@ -299,17 +311,20 @@ class MainActivity : Activity() {
         var config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
         val companion = io.github.madmax3553.staticgroot.schedule.CompanionSettings(this)
         val companionUrl = if (companion.enabled) companion.resolveUrl(client.serverUrl) else ""
-        var shared = if (companionUrl.isNotBlank()) runCatching {
-            io.github.madmax3553.staticgroot.schedule.SharedStation(companionUrl, client.stationIdentity())
+        var shared = if (companionUrl.isNotBlank() && stationId != null) runCatching {
+            io.github.madmax3553.staticgroot.schedule.SharedStation(companionUrl, stationId)
         }.getOrNull() else null
-        var stationZone = DisplaySettings(this).resolveZoneId(ZoneId.of("America/Edmonton"))
+        val displaySettings = DisplaySettings(this)
+        var stationZone = displaySettings.resolveZoneId(ZoneId.of("America/Edmonton"))
         var disabledGenerated = emptySet<Int>()
         var serverGenerated: List<io.github.madmax3553.staticgroot.schedule.SharedChannel> = emptyList()
+        var currentGeneration = 0
         if (shared != null) {
             runOnUiThread { status.text = "Reading shared channel setup…" }
             try {
                 val setup = shared.setup(config.channels, stationZone.id)
                 stationZone = ZoneId.of(setup.timeZone)
+                currentGeneration = setup.generation
                 // Generated channels (id from DYNAMIC_CHANNEL_ID_BASE) have no rules, so they are not
                 // built here. They are rebuilt from the library and merged with serverGenerated below.
                 config = config.copy(channels = setup.channels
@@ -349,35 +364,55 @@ class MainActivity : Activity() {
         AppSession.commercials = commercials
         AppSession.channels = channels
         AppSession.sharedStation = shared
-        AppSession.lastChannelId = null
+        AppSession.lastChannelId = displaySettings.lastChannelId
+        val publishedMap = HashMap<String, List<io.github.madmax3553.staticgroot.schedule.StoredBlock>>()
         if (shared != null) {
-            runOnUiThread { status.text = "Loading published programmes…" }
-            shared.publishCatalog(items)
+            runOnUiThread { status.text = "Loading published programs…" }
             val lookup = items.associateBy { it.id }
             val startDate = io.github.madmax3553.staticgroot.schedule.LocalDays.broadcastDate(clock.nowEpochSeconds, stationZone)
-            val force = intent.getBooleanExtra("force_regenerate", false)
             val candidates = ArrayList<Triple<Int, String, List<io.github.madmax3553.staticgroot.schedule.Block>>>()
             val existingDays = HashMap<Pair<Int, String>, List<io.github.madmax3553.staticgroot.schedule.Block>>()
+            if (!force) {
+                val fetchPool = Executors.newFixedThreadPool(EPISODE_FETCH_THREADS)
+                try {
+                    val queries = (0L..2L).flatMap { offset ->
+                        val dayKey = startDate.plusDays(offset).toString()
+                        channels.map { ch -> Triple(ch, dayKey, fetchPool.submit<List<io.github.madmax3553.staticgroot.schedule.Block>?> {
+                            shared.existing(ch, dayKey, lookup)?.takeIf { it.isNotEmpty() }
+                        }) }
+                    }
+                    for ((ch, dayKey, future) in queries) {
+                        val existing = future.get()
+                        if (existing != null) existingDays[ch.id to dayKey] = existing
+                    }
+                } finally {
+                    fetchPool.shutdownNow()
+                }
+            }
             for (offset in 0L..2L) {
                 val date = startDate.plusDays(offset)
                 val dayKey = date.toString()
                 val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
                 val locked = HashSet<Int>()
                 val day = channels.associate { ch ->
-                    val existing = if (force) null else shared.existing(ch, dayKey, lookup)?.takeIf { it.isNotEmpty() }
-                    if (existing != null) {
-                        locked.add(ch.id)
-                        existingDays[ch.id to dayKey] = existing
-                    }
+                    val existing = existingDays[ch.id to dayKey]
+                    if (existing != null) locked.add(ch.id)
                     ch.id to (existing ?: AppSession.scheduler!!.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, start + 3600))
                 }
                 // Premiere channels keep their anchor; existing published days are immutable.
                 locked.addAll(channels.filter { it.isPremiere }.map { it.id })
-                val optimized = io.github.madmax3553.staticgroot.schedule.GenerationReshuffler.optimize(day, start, locked)
+                val optimized = if (locked.size >= channels.size) {
+                    io.github.madmax3553.staticgroot.schedule.GenerationReshuffler.Result(day, 0)
+                } else {
+                    io.github.madmax3553.staticgroot.schedule.GenerationReshuffler.optimize(day, start, locked)
+                }
                 Log.i(TAG, "GENERATION overlap-reducing swaps=${optimized.swaps}")
                 channels.forEach { ch -> candidates.add(Triple(ch.id, dayKey, optimized.days.getValue(ch.id))) }
             }
-            if (force) shared.regenerate(candidates.filter { it.third.isNotEmpty() })
+            if (force) {
+                shared.regenerate(candidates.filter { it.third.isNotEmpty() })
+                currentGeneration += 1
+            }
             for ((id, dayKey, proposed) in candidates) {
                 val ch = channels.first { it.id == id }
                 val start = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(java.time.LocalDate.parse(dayKey), stationZone)
@@ -389,16 +424,276 @@ class MainActivity : Activity() {
                 }
                 if (saved.isNotEmpty()) {
                     AppSession.scheduler!!.installPublished(id, start, saved)
+                    publishedMap["$id|$dayKey"] = shared.storedBlocks(saved)
                 }
             }
-            AppSession.lastChannelId = shared.selection()
+            val remoteSelection = runCatching { shared.selection() }.getOrNull()
+            val resolvedSelection = remoteSelection ?: displaySettings.lastChannelId
+            AppSession.lastChannelId = resolvedSelection
+            if (resolvedSelection != null) {
+                displaySettings.lastChannelId = resolvedSelection
+                if (remoteSelection == null) {
+                    val activeShared = shared
+                    Thread { runCatching { activeShared.select(resolvedSelection) } }.apply { isDaemon = true }.start()
+                }
+            }
             AppSession.scheduler!!.usePublishedOnly()
+            val activeShared = shared
+            Thread { runCatching { activeShared.publishCatalog(items) } }.apply { isDaemon = true; name = "publish-catalog" }.start()
         }
+        if (stationId != null && channels.isNotEmpty() && items.isNotEmpty()) {
+            val snap = io.github.madmax3553.staticgroot.schedule.LaunchSnapshot(
+                stationId = stationId,
+                generation = currentGeneration,
+                timeZone = stationZone.id,
+                savedAtEpochSeconds = System.currentTimeMillis() / 1000,
+                lastChannelId = AppSession.lastChannelId,
+                channels = channels.map { it.definition },
+                items = items,
+                commercials = commercials,
+                publishedDays = publishedMap,
+            )
+            Thread { snapshotStore.save(snap) }.apply { isDaemon = true; name = "save-snapshot" }.start()
+        }
+        Log.i(TAG, "LAUNCH cold complete in ${System.currentTimeMillis() - launchStartMs}ms")
         startMusicEnrichment(items, musicStore)
         runOnUiThread {
             startActivity(Intent(this, GuideActivity::class.java))
             finish()
         }
+    }
+
+    /**
+     * Warm fast-launch path when a cached library snapshot and shared schedule service exist.
+     * Resolves the last-watched channel and visible EPG neighborhood for today's window first,
+     * opens [GuideActivity] immediately, and loads offscreen channels and future days in the background.
+     */
+    private fun tryWarmLaunch(
+        client: JellyfinClient,
+        stationId: String,
+        snapshot: io.github.madmax3553.staticgroot.schedule.LaunchSnapshot,
+        snapshotStore: io.github.madmax3553.staticgroot.schedule.LaunchSnapshotStore,
+        launchStartMs: Long,
+    ): Boolean {
+        val companion = io.github.madmax3553.staticgroot.schedule.CompanionSettings(this)
+        val companionUrl = if (companion.enabled) companion.resolveUrl(client.serverUrl) else ""
+        if (companionUrl.isBlank()) return false
+        return try {
+            runOnUiThread { status.text = "Tuning to live broadcast…" }
+            val shared = io.github.madmax3553.staticgroot.schedule.SharedStation(companionUrl, stationId)
+            val displaySettings = DisplaySettings(this)
+            val defaultZone = displaySettings.resolveZoneId(ZoneId.of(snapshot.timeZone))
+            val config = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
+            val setup = shared.setup(config.channels, defaultZone.id)
+            val stationZone = ZoneId.of(setup.timeZone)
+            val enabledById = setup.channels.filter { it.enabled }.associateBy { it.id }
+            val activeDefs = snapshot.channels.mapNotNull { enabledById[it.id]?.definition }
+                .ifEmpty { setup.channels.filter { it.enabled }.map { it.definition } }
+                .sortedBy { it.number }
+            if (activeDefs.isEmpty()) return false
+
+            val remoteSelection = runCatching { shared.selection() }.getOrNull()
+            val targetChannelId = remoteSelection
+                ?: displaySettings.lastChannelId
+                ?: snapshot.lastChannelId
+                ?: activeDefs.first().id
+            val lookup = snapshot.items.associateBy { it.id }
+            val placeholderPool = listOf(snapshot.items.first())
+            val runtimeChannels = activeDefs.map { ChannelRuntime(it, placeholderPool) }
+            val targetIdx = runtimeChannels.indexOfFirst { it.id == targetChannelId }.coerceAtLeast(0)
+            // Load the target channel and the visible EPG rows around it first.
+            val visibleIndices = (-1..GuideNav.VISIBLE).map { Math.floorMod(targetIdx + it, runtimeChannels.size) }.distinct()
+            val visibleChannels = visibleIndices.map { runtimeChannels[it] }
+
+            val nowUnix = System.currentTimeMillis() / 1000
+            val startDate = io.github.madmax3553.staticgroot.schedule.LocalDays.broadcastDate(nowUnix, stationZone)
+            val sameGeneration = snapshot.generation == setup.generation
+
+            AppSession.stationZone = stationZone
+            AppSession.init(File(filesDir, "day_history"))
+            val updatedPublished = HashMap(if (sameGeneration) snapshot.publishedDays else emptyMap())
+            var foregroundInstalled = 0
+
+            for (offset in 0L..1L) {
+                val date = startDate.plusDays(offset)
+                val dayKey = date.toString()
+                val dayStart = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
+                for (ch in visibleChannels) {
+                    val key = "${ch.id}|$dayKey"
+                    val cachedStored = if (sameGeneration) updatedPublished[key] else null
+                    val blocks = if (cachedStored != null) {
+                        shared.resolve(io.github.madmax3553.staticgroot.schedule.SharedDay(cachedStored, setup.generation), lookup)
+                    } else {
+                        shared.existing(ch, dayKey, lookup)?.also { fetched ->
+                            if (fetched.isNotEmpty()) updatedPublished[key] = shared.storedBlocks(fetched)
+                        }
+                    }
+                    if (!blocks.isNullOrEmpty()) {
+                        AppSession.scheduler!!.installPublished(ch.id, dayStart, blocks)
+                        if (offset == 0L) foregroundInstalled++
+                    }
+                }
+            }
+            if (foregroundInstalled == 0) return false
+
+            AppSession.scheduler!!.usePublishedOnly()
+            AppSession.client = client
+            AppSession.commercials = snapshot.commercials
+            AppSession.channels = runtimeChannels
+            AppSession.sharedStation = shared
+            AppSession.lastChannelId = runtimeChannels[targetIdx].id
+            displaySettings.lastChannelId = runtimeChannels[targetIdx].id
+            if (remoteSelection == null) {
+                val selectedId = runtimeChannels[targetIdx].id
+                Thread { runCatching { shared.select(selectedId) } }.apply { isDaemon = true }.start()
+            }
+
+            val fastMs = System.currentTimeMillis() - launchStartMs
+            Log.i(TAG, "LAUNCH warm fast-path ready in ${fastMs}ms (gen=${setup.generation} targetCh=${runtimeChannels[targetIdx].id} visibleLoaded=$foregroundInstalled)")
+            runOnUiThread {
+                startActivity(Intent(this, GuideActivity::class.java))
+                finish()
+            }
+
+            Thread {
+                completeWarmLaunchInBackground(
+                    client = client,
+                    stationId = stationId,
+                    shared = shared,
+                    setup = setup,
+                    stationZone = stationZone,
+                    startDate = startDate,
+                    sameGeneration = sameGeneration,
+                    runtimeChannels = runtimeChannels,
+                    lookup = lookup,
+                    snapshot = snapshot,
+                    updatedPublished = updatedPublished,
+                    snapshotStore = snapshotStore,
+                )
+            }.apply { isDaemon = true; name = "warm-offscreen-loader" }.start()
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "LAUNCH warm fast-path fallback (${e.javaClass.simpleName}: ${e.message})")
+            false
+        }
+    }
+
+    private fun completeWarmLaunchInBackground(
+        client: JellyfinClient,
+        stationId: String,
+        shared: io.github.madmax3553.staticgroot.schedule.SharedStation,
+        setup: io.github.madmax3553.staticgroot.schedule.StationSetup,
+        stationZone: ZoneId,
+        startDate: java.time.LocalDate,
+        sameGeneration: Boolean,
+        runtimeChannels: List<ChannelRuntime>,
+        lookup: Map<String, MediaItem>,
+        snapshot: io.github.madmax3553.staticgroot.schedule.LaunchSnapshot,
+        updatedPublished: HashMap<String, List<io.github.madmax3553.staticgroot.schedule.StoredBlock>>,
+        snapshotStore: io.github.madmax3553.staticgroot.schedule.LaunchSnapshotStore,
+    ) {
+        val tBg = System.currentTimeMillis()
+        var missingAnyDay = false
+        val fetchPool = Executors.newFixedThreadPool(EPISODE_FETCH_THREADS)
+        try {
+            for (offset in 0L..2L) {
+                val date = startDate.plusDays(offset)
+                val dayKey = date.toString()
+                val dayStart = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
+                val tasks = runtimeChannels.map { ch ->
+                    val key = "${ch.id}|$dayKey"
+                    ch to fetchPool.submit<Pair<List<io.github.madmax3553.staticgroot.schedule.Block>?, Boolean>> {
+                        val cachedStored = synchronized(updatedPublished) {
+                            if (sameGeneration) updatedPublished[key] else null
+                        }
+                        if (cachedStored != null) {
+                            shared.resolve(io.github.madmax3553.staticgroot.schedule.SharedDay(cachedStored, setup.generation), lookup) to false
+                        } else {
+                            shared.existing(ch, dayKey, lookup) to true
+                        }
+                    }
+                }
+                var updatedThisDay = false
+                for ((ch, future) in tasks) {
+                    val (blocks, fromNetwork) = runCatching { future.get() }.getOrDefault(null to false)
+                    if (!blocks.isNullOrEmpty()) {
+                        AppSession.scheduler?.installPublished(ch.id, dayStart, blocks)
+                        if (fromNetwork) {
+                            synchronized(updatedPublished) {
+                                updatedPublished["${ch.id}|$dayKey"] = shared.storedBlocks(blocks)
+                            }
+                        }
+                        updatedThisDay = true
+                    } else {
+                        missingAnyDay = true
+                    }
+                }
+                if (updatedThisDay) AppSession.notifySchedulesUpdated()
+            }
+        } finally {
+            fetchPool.shutdownNow()
+        }
+
+        // If a new broadcast day rolled over and has not been published yet, build pools and publish it.
+        var finalChannels = runtimeChannels
+        if (missingAnyDay) {
+            runCatching {
+                val rawConfig = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
+                val config = rawConfig.copy(channels = setup.channels
+                    .filter { it.enabled && it.id < DYNAMIC_CHANNEL_ID_BASE }.map { it.definition })
+                val disabledGenerated = setup.channels.filter { !it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }.map { it.id }.toSet()
+                val serverGenerated = setup.channels.filter { it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }
+                val memberships = ChannelMemberships.parse(
+                    assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
+                )
+                val enrichment = enrichItems(snapshot.items)
+                val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
+                val staticChannels = ChannelPools.buildAll(config, snapshot.items, enrichment = enrichment, memberships = memberships, clock = clock)
+                finalChannels = buildLineup(config, staticChannels, snapshot.items, shared, stationZone, clock, disabledGenerated, serverGenerated)
+                AppSession.channels = finalChannels
+                for (offset in 0L..2L) {
+                    val date = startDate.plusDays(offset)
+                    val dayKey = date.toString()
+                    val dayStart = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
+                    for (ch in finalChannels) {
+                        val key = "${ch.id}|$dayKey"
+                        if (synchronized(updatedPublished) { key !in updatedPublished } && ch.unrestrictedPool.isNotEmpty()) {
+                            val localSched = io.github.madmax3553.staticgroot.schedule.ChannelScheduler(stationZone)
+                            val proposed = localSched.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, dayStart + 3600)
+                            if (proposed.isNotEmpty()) {
+                                val saved = shared.publish(ch, dayKey, proposed, lookup)
+                                if (saved.isNotEmpty()) {
+                                    AppSession.scheduler?.installPublished(ch.id, dayStart, saved)
+                                    synchronized(updatedPublished) {
+                                        updatedPublished[key] = shared.storedBlocks(saved)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                AppSession.notifySchedulesUpdated()
+            }.onFailure { Log.w(TAG, "LAUNCH background pool/day fill failed (${it.message})") }
+        }
+
+        val activeDayKeys = (0L..2L).map { startDate.plusDays(it).toString() }.toSet()
+        val prunedPublished = synchronized(updatedPublished) {
+            updatedPublished.filterKeys { key -> key.substringAfter('|') in activeDayKeys }
+        }
+        snapshotStore.save(
+            snapshot.copy(
+                generation = setup.generation,
+                timeZone = stationZone.id,
+                savedAtEpochSeconds = System.currentTimeMillis() / 1000,
+                lastChannelId = AppSession.lastChannelId,
+                channels = finalChannels.map { it.definition },
+                publishedDays = prunedPublished,
+            )
+        )
+        runCatching { shared.publishCatalog(snapshot.items) }
+        val musicStore = MusicEnrichmentStore(File(filesDir, "music_enrichment_cache.json"))
+        startMusicEnrichment(snapshot.items, musicStore)
+        Log.i(TAG, "LAUNCH warm offscreen background complete in ${System.currentTimeMillis() - tBg}ms")
     }
 
     /**

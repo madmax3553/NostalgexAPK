@@ -1,6 +1,9 @@
 package io.github.madmax3553.staticgroot.channels
 
+import kotlinx.serialization.Serializable
+
 /** One file of a disc-stacked movie. [runtimeSeconds] is null when the server did not report one. */
+@Serializable
 data class MediaPart(val sourceId: String, val runtimeSeconds: Long?)
 
 /**

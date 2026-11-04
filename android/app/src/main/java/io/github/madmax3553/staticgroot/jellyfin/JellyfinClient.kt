@@ -182,7 +182,7 @@ class JellyfinClient(
             settings = settings, itemId = itemId)
     }
 
-    /** Releases the server encode when switching programmes or leaving playback. */
+    /** Releases the server encode when switching programs or leaving playback. */
     fun stopPlayback(sessionId: String?) {
         if (sessionId.isNullOrEmpty()) return
         http.post(url("/Sessions/Playing/Stopped"), headers(),

@@ -86,20 +86,20 @@ class SharedStation(val base: String, stationId: String) {
     }
 
     /**
-     * Published days are immutable and shared, so a programme this device cannot see (removed from
+     * Published days are immutable and shared, so a program this device cannot see (removed from
      * the library, or hidden from this user) is not rewritten. Its slot goes to a station break
      * instead, and breaks that end up side by side become one. The break's item is only for the
-     * coming-next card: the next programme still on the schedule, else the previous one. A day with
+     * coming-next card: the next program still on the schedule, else the previous one. A day with
      * none left resolves to nothing.
      */
-    private fun resolve(saved: SharedDay, items: Map<String, MediaItem>): List<Block> {
+    internal fun resolve(saved: SharedDay, items: Map<String, MediaItem>): List<Block> {
         val present = saved.blocks.filter { !it.isBumper && it.itemId in items }
         if (present.isEmpty()) {
-            if (saved.blocks.isNotEmpty()) Log.w(TAG, "SHARED day has no programmes this user can see, leaving it off air")
+            if (saved.blocks.isNotEmpty()) Log.w(TAG, "SHARED day has no programs this user can see, leaving it off air")
             return emptyList()
         }
         val missing = saved.blocks.filter { it.itemId !in items }.map { it.itemId }.toSet()
-        if (missing.isNotEmpty()) Log.w(TAG, "SHARED ${missing.size} published programmes unavailable, filling with station breaks")
+        if (missing.isNotEmpty()) Log.w(TAG, "SHARED ${missing.size} published programs unavailable, filling with station breaks")
         val result = ArrayList<Block>()
         for ((index, stored) in saved.blocks.withIndex()) {
             val item = items[stored.itemId]
@@ -127,7 +127,7 @@ class SharedStation(val base: String, stationId: String) {
         generation = saved.generation
     }
 
-    private fun storedBlocks(blocks: List<Block>): List<StoredBlock> = blocks.map {
+    internal fun storedBlocks(blocks: List<Block>): List<StoredBlock> = blocks.map {
             StoredBlock(it.item.id, it.startUnix, it.endUnix, it.isBumper,
                 it.mediaOffsetSeconds, it.isMidBreak, if (it.item.type == MediaType.MOVIE &&
                     it.item.librarySource != io.github.madmax3553.staticgroot.channels.LibrarySource.MUSIC_VIDEO)
