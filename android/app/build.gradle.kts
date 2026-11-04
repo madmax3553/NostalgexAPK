@@ -35,8 +35,8 @@ android {
         // Placeholder floor. Set the real device floor during the port.
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.1.33"
+        versionCode = 35
+        versionName = "0.1.34"
         buildConfigField("String", "TMDB_API_KEY", "\"${secret("TMDB_API_KEY")}\"")
         buildConfigField("String", "OMDB_API_KEY", "\"${secret("OMDB_API_KEY")}\"")
         buildConfigField("String", "DEFAULT_JELLYFIN_URLS", "\"${secret("DEFAULT_JELLYFIN_URLS")}\"")

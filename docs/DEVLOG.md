@@ -3,6 +3,27 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-03 (StaticGroot launcher icon and Android TV banner)
+
+**Why.** The Android app still had its initial scaffold artwork: a plain white rectangle on
+a black background in both `ic_launcher_foreground.xml` and `tv_banner.xml`, which made the
+app hard to recognize on the Android TV and Fire TV launcher rows.
+
+**Changed.**
+- Replaced `ic_launcher_foreground.xml` (`108x108 dp`) with a vector CRT television set in
+  the `GrootBrand` Cyberdream palette (`#16181A`, `#3C4048`, `#5EA1FF`, `#5EF1FF`, `#F1FF5E`)
+  showing a pixel `SG` monogram inside the screen.
+- Replaced `tv_banner.xml` (`320x180 dp`) with the matching CRT television illustration and
+  block vector lettering reading `STATIC GROOT TELEVISION` over a scanline card frame.
+- Changed `nostalgex_background` in `colors.xml` from `#000000` to `#16181A` so the adaptive
+  icon background matches `GrootBrand.BACKGROUND`.
+- Bumped Android `versionName` to `0.1.34` and `versionCode` to `35`.
+
+**Half-done.** Assembled with `assembleDebug`, not yet installed on the TVs.
+
+**Next.** Install on the Sony Android TV and Fire TV Stick once approved, and check the tile
+in both launchers.
+
 ## 2026-11-03 (a missing published programme no longer fails the launch)
 
 **Why.** After rolling part of the library, a launch failed outright. Published days are
