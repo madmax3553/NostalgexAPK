@@ -43,11 +43,17 @@ Commits carry the detail of *what*; this carries the *why*.
 - Replaced the stock playback controls and Settings AlertDialogs in `GuideActivity` with
   themed `GrootBrand` CRT overlays and added Left/Right channel stepping in fullscreen.
 
-**Half-done.** The very first launch after installing 0.1.35 still runs a cold scan to write
+**Measured.**
+- Sony Android TV: warm launch to `GuideActivity` dropped from 8,200 ms to 736 ms
+  (`targetCh=18`, `visibleLoaded=7`), with offscreen channels finishing in the background
+  614 ms later and first video frame 1,486 ms after tune.
+- Fire TV Stick: warm launch to `GuideActivity` dropped from 12,300 ms to 1,711 ms,
+  automatically picking up `targetCh=18` from the companion service selection.
+
+**Half-done.** The very first launch after installing 0.1.35 runs a cold scan once to write
 the initial `launch_snapshot.json`; subsequent launches use the warm fast path.
 
-**Next.** Push 0.1.35 (36) to the Sony Android TV and Fire TV Stick and measure warm launch
-times from `logcat`.
+**Next.** Monitor background rollover when the 03:00 broadcast day boundary passes.
 
 ## 2026-11-03 (StaticGroot launcher icon and Android TV banner)
 
