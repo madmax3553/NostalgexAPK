@@ -9,6 +9,9 @@ Commits carry the detail of *what*; this carries the *why*.
 a black background in both `ic_launcher_foreground.xml` and `tv_banner.xml`, which made the
 app hard to recognize on the Android TV and Fire TV launcher rows.
 
+**Shipped.** StaticGroot 0.1.34 (35) debug APK installed and launched on the Sony Android TV.
+The Fire TV Stick returned `adb: device unauthorized` and was not updated yet.
+
 **Changed.**
 - Replaced `ic_launcher_foreground.xml` (`108x108 dp`) with a vector CRT television set in
   the `GrootBrand` Cyberdream palette (`#16181A`, `#3C4048`, `#5EA1FF`, `#5EF1FF`, `#F1FF5E`)
@@ -19,10 +22,10 @@ app hard to recognize on the Android TV and Fire TV launcher rows.
   icon background matches `GrootBrand.BACKGROUND`.
 - Bumped Android `versionName` to `0.1.34` and `versionCode` to `35`.
 
-**Half-done.** Assembled with `assembleDebug`, not yet installed on the TVs.
+**Half-done.** Not installed on the Fire TV Stick until its ADB authorization prompt is
+accepted.
 
-**Next.** Install on the Sony Android TV and Fire TV Stick once approved, and check the tile
-in both launchers.
+**Next.** Accept the ADB prompt on the Fire TV Stick and push `0.1.34 (35)` there too.
 
 ## 2026-11-03 (a missing published programme no longer fails the launch)
 
