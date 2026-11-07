@@ -3,6 +3,29 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-07 (raster PNG launcher icons and banner for Fire OS)
+
+**Why.** On the Fire TV Stick launcher row, StaticGroot still rendered the old square white-bar
+placeholder inside gray sidebars. The APK only shipped XML vector drawables for `ic_launcher`
+and `tv_banner`, had no raster PNGs in `mipmap-mdpi` through `mipmap-xxxhdpi` or
+`drawable-xhdpi`, and `MainActivity` did not declare `CATEGORY_LAUNCHER` alongside
+`CATEGORY_LEANBACK_LAUNCHER` with explicit activity `android:icon` and `android:banner`
+attributes.
+
+**Changed.** StaticGroot 0.1.36 (37).
+- Rendered multi-density raster PNGs from the StaticGroot CRT logo for `ic_launcher.png`
+  (`48x48` to `192x192`) and `ic_launcher_foreground.png` (`108x108` to `432x432`) across
+  `mipmap-mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, and `xxxhdpi`.
+- Rendered raster `tv_banner.png` bitmaps in `drawable-xhdpi` (`320x180`) and
+  `drawable-xxhdpi` (`640x360`), removing the vector `tv_banner.xml` and
+  `ic_launcher_foreground.xml`.
+- Updated `mipmap-anydpi-v26/ic_launcher.xml` to reference `@mipmap/ic_launcher_foreground`
+  and added `CATEGORY_LAUNCHER`, `android:icon`, and `android:banner` on `MainActivity`.
+
+**Half-done.** Nothing.
+
+**Next.** Verify the updated launcher tile on the Fire TV Stick home screen.
+
 ## 2026-11-03 (warm launch snapshot, program spelling, EPG wrap, and HUD controls)
 
 **Why.**
