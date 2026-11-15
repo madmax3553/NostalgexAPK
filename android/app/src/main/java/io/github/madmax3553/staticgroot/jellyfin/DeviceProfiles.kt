@@ -7,7 +7,7 @@ package io.github.madmax3553.staticgroot.jellyfin
  * Not yet ported: the 8-bit cap on H.264. The bitrate cap comes from the viewer's StreamQuality.
  */
 object DeviceProfiles {
-    private const val AUDIO = "aac,mp3,ac3,eac3,flac,alac"
+    private const val AUDIO = "aac,mp3,ac3,eac3,flac,alac,opus,vorbis"
 
     fun supportsHevc(): Boolean = runCatching {
         android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos.any {
@@ -21,7 +21,7 @@ object DeviceProfiles {
         DirectPlayProfiles = listOf(
             // Media3 can demux Matroska. Unlike AVPlayer, it does not need a server remux
             // for compatible H.264/audio tracks just because the container is MKV.
-            DirectPlayProfile("mp4,m4v,mov,mkv", "Video", if (hevc) "h264,hevc" else "h264", AUDIO),
+            DirectPlayProfile("mp4,m4v,mov,mkv", "Video", "av1,h265,h264", AUDIO),
         ),
         TranscodingProfiles = listOf(
             // HEVC first when the TV decodes it: a file with HEVC video and an audio track the TV
