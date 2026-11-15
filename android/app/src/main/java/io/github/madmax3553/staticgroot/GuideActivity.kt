@@ -32,6 +32,8 @@ import java.util.concurrent.Executors
 
 /** TunerView proportions: information left, 4:3 preview right, EPG underneath. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private const val REMOTE_SEEK_MS = 30_000L
+
 class GuideActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val schedulesWorker = Executors.newSingleThreadExecutor()
@@ -360,6 +362,8 @@ class GuideActivity : Activity() {
                     playback.togglePause()
                     return true
                 }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> { playback.seekBy(-REMOTE_SEEK_MS); return true }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { playback.seekBy(REMOTE_SEEK_MS); return true }
                 KeyEvent.KEYCODE_CAPTIONS -> {
                     displaySettings.captionsEnabled = !displaySettings.captionsEnabled
                     playback.setCaptions(displaySettings.captionsEnabled)
@@ -461,6 +465,22 @@ class GuideActivity : Activity() {
         headerRow.addView(statusBadge)
         card.addView(headerRow)
 
+        val infoStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val episodeLine = listOfNotNull(item?.seTag, item?.episodeTitle).joinToString("  ")
+        if (episodeLine.isNotEmpty()) infoStack.addView(label(episodeLine, 15f, Color.LTGRAY))
+        playback.entry?.endUnix?.let { programEnd ->
+            val clock = SimpleDateFormat("h:mm a", Locale.getDefault()).apply {
+                timeZone = displaySettings.displayTimeZone(AppSession.stationZone)
+            }
+            val minutesLeft = ((programEnd - System.currentTimeMillis() / 1000) / 60).coerceAtLeast(0)
+            infoStack.addView(label("$minutesLeft MIN LEFT  •  ENDS ${clock.format(Date(programEnd * 1000))}",
+                15f, GrootBrand.CYAN, accent = true))
+        }
+        playback.comingNext().firstOrNull()?.let { next ->
+            infoStack.addView(label("NEXT  $next", 15f, Color.WHITE))
+        }
+        card.addView(infoStack, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+
         // Divider
         card.addView(View(this).apply {
             setBackgroundColor(0x3329F2FF)
@@ -490,6 +510,10 @@ class GuideActivity : Activity() {
             btn.text = if (playback.paused) "▶ PLAY" else "❚❚ PAUSE"
             refreshStatusBadge()
         }
+
+        addControlPill("« 30S") { playback.seekBy(-REMOTE_SEEK_MS) }
+
+        addControlPill("30S »") { playback.seekBy(REMOTE_SEEK_MS) }
 
         addControlPill("● SYNC LIVE") {
             playback.returnToLive()

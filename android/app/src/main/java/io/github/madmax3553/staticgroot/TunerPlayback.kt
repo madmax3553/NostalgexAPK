@@ -100,6 +100,17 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
     }
 
     fun returnToLive() { channel?.let { tune(it, force = true) } }
+
+    /** Moves within the loaded program. Ignored for commercials and bumpers, which are not seekable. */
+    fun seekBy(deltaMs: Long) {
+        if (commercialPlaying || entry?.block?.isBumper == true || !firstFrame) return
+        val duration = player.duration.takeIf { it > 0 } ?: return
+        val target = (player.currentPosition + deltaMs).coerceIn(0, duration)
+        sampleStart = android.os.SystemClock.elapsedRealtime()
+        samplePosition = target
+        player.seekTo(target)
+        changed()
+    }
     val bumperRemainingSeconds: Long
         get() = ((bumperDeadline - (if (paused) pausedAt else android.os.SystemClock.elapsedRealtime()) + 999) / 1000).coerceAtLeast(0)
 
