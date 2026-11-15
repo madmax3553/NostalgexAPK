@@ -3,6 +3,44 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-14 (AV1 and Opus direct play, seek and program info in playback)
+
+**Why.** Captain America and other 2160p HEVC titles timed out in transcode on a Sony
+BRAVIA 4K VH22, while the official Jellyfin Android TV client played the same files. The
+device profile declared only H.264 and HEVC video, and AAC, MP3, AC-3, E-AC-3, FLAC and
+ALAC audio. Files with AV1 video or Opus audio therefore fell back to a server transcode,
+which pinned the server CPU and could not keep up with playback.
+
+**Changed.**
+- Declared `av1` among the direct-play video codecs and `opus,vorbis` among the audio
+  codecs (`DeviceProfiles.kt`). `av1` and `hevc` are declared only when the device reports
+  a hardware decoder for them, as HEVC already was.
+- Added seek back and forward 30 seconds to the playback overlay and to the remote
+  rewind and fast-forward keys (`TunerPlayback.seekBy`, `GuideActivity.kt`). Seeking is
+  ignored for commercials and station breaks.
+- The overlay shows the episode code and title, minutes left with the program end time,
+  and the next program (`GuideActivity.kt`).
+
+**Measured.** On the Sony TV, The Lord of the Rings: The Return of the King (AV1 with
+Opus) played by direct play after the change. The Blind Side and Inception did not start,
+and their causes are not diagnosed. Before the change, a 2160p title that needed a
+server transcode logged a 15 second gap before its second segment.
+
+**Half-done.**
+- The overlay styling is pending a redesign. The behaviour works.
+- The Fire TV Stick has the build installed but the AV1 profile was not tested on it.
+- Direct-play codec list was briefly hardcoded to `h265`, which would have declared HEVC
+  on TVs without a decoder. Fixed before release: it is built from the decoder checks again.
+- Seeking forward past the transcoded part of an HLS stream may stall. Not measured on a
+  transcoded stream. Direct-play files have not shown this.
+- Time left uses the wall clock, so it keeps counting down while paused.
+- A Last Starfighter file was remuxed on the server from M2TS with DTS audio to MKV with
+  E-AC-3 5.1 audio, video copied. Playback has not been verified after the remux. About 50
+  other library files carry DTS audio and are unconverted.
+
+**Next.** Redesign the overlay. Diagnose why The Blind Side and Inception fail. Test a seek on a transcoded
+stream. Decide whether to batch-convert the DTS files.
+
 ## 2026-11-07 (raster PNG launcher icons and banner for Fire OS)
 
 **Why.** On the Fire TV Stick launcher row, StaticGroot still rendered the old square white-bar

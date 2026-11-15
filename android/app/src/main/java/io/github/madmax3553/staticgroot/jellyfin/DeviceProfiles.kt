@@ -9,11 +9,23 @@ package io.github.madmax3553.staticgroot.jellyfin
 object DeviceProfiles {
     private const val AUDIO = "aac,mp3,ac3,eac3,flac,alac,opus,vorbis"
 
+    fun supportsAv1(): Boolean = runCatching {
+        android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos.any {
+            !it.isEncoder && it.supportedTypes.any { type -> type.equals("video/av01", true) }
+        }
+    }.getOrDefault(false)
+
     fun supportsHevc(): Boolean = runCatching {
         android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos.any {
             !it.isEncoder && it.supportedTypes.any { type -> type.equals("video/hevc", true) }
         }
     }.getOrDefault(false)
+
+    private fun directPlayVideoCodecs(hevc: Boolean): String = buildList {
+        if (supportsAv1()) add("av1")
+        if (hevc) add("hevc")
+        add("h264")
+    }.joinToString(",")
 
     fun forDevice(hevc: Boolean = supportsHevc(), settings: PlaybackSettings = PlaybackSettings()): DeviceProfile = DeviceProfile(
         MaxStreamingBitrate = settings.maxBitrate,
@@ -21,7 +33,7 @@ object DeviceProfiles {
         DirectPlayProfiles = listOf(
             // Media3 can demux Matroska. Unlike AVPlayer, it does not need a server remux
             // for compatible H.264/audio tracks just because the container is MKV.
-            DirectPlayProfile("mp4,m4v,mov,mkv", "Video", "av1,h265,h264", AUDIO),
+            DirectPlayProfile("mp4,m4v,mov,mkv", "Video", directPlayVideoCodecs(hevc), AUDIO),
         ),
         TranscodingProfiles = listOf(
             // HEVC first when the TV decodes it: a file with HEVC video and an audio track the TV
