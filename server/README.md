@@ -60,6 +60,25 @@ Published blocks include breaks and content offsets. If an item disappears from
 the library or the user loses access, loading reports it rather than silently
 substituting a different advertised program.
 
+## Library revision
+
+Jellyfin is the one source of truth for the library, and every TV loads it itself. The
+service only tells the TVs when one of them has seen a change, so they do not drift.
+
+- After loading, each TV computes a short content stamp (a hash of item ids, titles,
+  episode codes and TMDB ids; nothing a TV derives locally) and posts it to
+  `/library`. A new stamp raises the revision. The same stamp leaves it alone.
+- Each TV reads `/library` every 15 minutes. A different stamp from the service means
+  another TV saw a change, so this TV checks Jellyfin and reloads if it finds one.
+- Publishing a new day sends `libraryRevision`. If it is lower than the service's, the
+  service answers 409 `Library changed; refresh before publishing`, and the TV reloads
+  and tries again. A TV with an old library cannot lock in a new day. Days that are
+  already published are returned as before, whatever revision the request carries.
+- Clients that send no `libraryRevision` (older apps) are accepted unchanged, and an
+  older service without `/library` makes the app carry on without it.
+- Published days never change. Titles on them follow the library, because a block stores
+  only an item id and the title is looked up when the guide reads it.
+
 ## Force regeneration
 
 Settings > Force regenerate schedules rebuilds today and the following two days,
@@ -80,9 +99,11 @@ then aligns the next showing to the quarter-hour.
 - The service is a persistent publication authority. An Android client currently
   computes candidate schedules; the service validates and locks the first one.
   It does not yet scan Jellyfin or build schedules autonomously without a client.
-- The app fetches today and two following days on launch. Restart at least every
-  two days to extend the horizon. Beyond it shared mode shows no schedule rather
-  than silently making a different local one. Background horizon refresh is pending.
+- The app keeps today and the two following days published while it runs. After each
+  03:00 rollover a TV builds and publishes the next day from its freshest library, so
+  the schedule extends itself. Beyond the horizon, shared mode shows no schedule rather
+  than silently making a different local one. A TV that is off for more than two days
+  still needs a launch to catch up. The first TV to publish a day wins; the others use it.
 - Last-channel updates are best effort. Failed updates are not queued offline.
 - Station definitions and enabled flags are shared. Display preferences (CRT,
   off-air visibility) remain local to each TV.
@@ -107,7 +128,9 @@ All requests require `Authorization: Bearer <service-key>`.
 | `POST /v1/stations/{station}/selection` | Store last channel |
 | `GET /v1/stations/{station}/selection` | Read last channel |
 | `POST /v1/stations/{station}/regenerate` | Atomically publish a complete replacement generation |
-| `POST /v1/stations/{station}/catalog` | Upload the item to series map used by the overlap audit |
+| `GET /v1/stations/{station}/library` | Read the library revision `{revision, stamp, itemCount, updatedAt}` |
+| `POST /v1/stations/{station}/library` | Report the content stamp a TV loaded from Jellyfin. A new stamp raises the revision; the same stamp changes nothing |
+| `POST /v1/stations/{station}/catalog` | Upload the item to series map used by the overlap audit. With `libraryRevision` below the current one it is refused with 409 |
 | `GET /v1/stations/{station}/playback?itemId=&source=&device=` | Read a playback profile |
 | `POST /v1/stations/{station}/playback` | Record a playback observation |
 

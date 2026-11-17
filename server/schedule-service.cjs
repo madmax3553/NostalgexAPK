@@ -79,6 +79,26 @@ class StationStore {
     fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(tmp, file);
     return value;
   }
+  // The library revision lets TVs agree on when to reload from Jellyfin. The stamp is a content
+  // hash each TV computes from its own load. Same stamp: nothing changed. Different stamp: the
+  // revision goes up, and every TV that sees a newer revision reloads and posts its own stamp.
+  library(station) {
+    return this.read(path.join(this.stationPath(station), 'library.json')) ||
+      { revision: 0, stamp: '', itemCount: 0, updatedAt: 0 };
+  }
+  setLibrary(station, proposal) {
+    const stamp = proposal && proposal.stamp;
+    if (typeof stamp !== 'string' || stamp.length < 1 || stamp.length > 128 ||
+        !Number.isSafeInteger(proposal.itemCount) || proposal.itemCount < 0) throw new Error('Invalid library');
+    const current = this.library(station);
+    if (current.stamp === stamp) return current;
+    const value = { revision: current.revision + 1, stamp, itemCount: proposal.itemCount, updatedAt: Date.now() };
+    const file = path.join(this.stationPath(station), 'library.json');
+    const tmp = `${file}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return value;
+  }
   day(station, channelId, dayKey, proposal) {
     if (!Number.isSafeInteger(channelId) || channelId < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey))
       throw new Error('Invalid channel or day');
@@ -91,6 +111,12 @@ class StationStore {
     if (!proposal) return saved;
     if (proposal.generation !== undefined && proposal.generation !== (setup.generation || 0)) {
       const error = new Error('Schedule regenerated; restart to reload'); error.status = 409; throw error;
+    }
+    // A TV that has not seen the latest library must not lock in a new day. Clients that do not
+    // send libraryRevision (older apps) are accepted as before.
+    if (proposal.libraryRevision !== undefined && proposal.libraryRevision !== null &&
+        (!Number.isSafeInteger(proposal.libraryRevision) || proposal.libraryRevision < this.library(station).revision)) {
+      const error = new Error('Library changed; refresh before publishing'); error.status = 409; throw error;
     }
     if (!setup.channels.some(c => c.id === channelId)) throw new Error('Unknown channel');
     const blocks = proposal.blocks;
@@ -180,6 +206,11 @@ function createServer({ directory, token } = {}) {
       const station = parts[2];
       if (parts[3] === 'catalog' && parts.length === 4 && req.method === 'POST') {
         if (!Array.isArray(body.items) || body.items.length > 100000) throw new Error('Invalid catalog');
+        if (body.libraryRevision !== undefined && body.libraryRevision !== null &&
+            (!Number.isSafeInteger(body.libraryRevision) || body.libraryRevision < store.library(station).revision)) {
+          // An out-of-date TV must not overwrite a newer catalog.
+          return reply(409, { error: 'Library changed; refresh before uploading the catalog' });
+        }
         const catalog = {};
         for (const item of body.items) {
           if (typeof item.id !== 'string' || typeof item.title !== 'string' || !['movie', 'episode'].includes(item.type) ||
@@ -189,6 +220,10 @@ function createServer({ directory, token } = {}) {
         const file = path.join(store.stationPath(station), 'catalog.json');
         fs.writeFileSync(`${file}.tmp`, JSON.stringify(catalog), { mode: 0o600 }); fs.renameSync(`${file}.tmp`, file);
         return reply(200, { items: body.items.length });
+      }
+      if (parts[3] === 'library' && parts.length === 4) {
+        if (req.method === 'GET') return reply(200, store.library(station));
+        if (req.method === 'POST') return reply(200, store.setLibrary(station, body));
       }
       if (parts[3] === 'playback' && parts.length === 4) {
         const profiles = new PlaybackProfiles(path.join(store.stationPath(station), 'playback'));
