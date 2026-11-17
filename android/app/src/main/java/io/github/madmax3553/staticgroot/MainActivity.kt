@@ -38,6 +38,8 @@ import io.github.madmax3553.staticgroot.jellyfin.JellyfinDiscovery
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinException
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinItem
 import io.github.madmax3553.staticgroot.jellyfin.JellyfinMapping
+import io.github.madmax3553.staticgroot.library.LibraryMaintenance
+import io.github.madmax3553.staticgroot.library.LibraryPipeline
 import java.io.File
 import java.time.ZoneId
 import java.util.UUID
@@ -264,45 +266,11 @@ class MainActivity : Activity() {
             }
         }
 
-        runOnUiThread { status.text = "Loading libraries..." }
-
-        val items = ArrayList<MediaItem>()
-        val commercials = ArrayList<io.github.madmax3553.staticgroot.jellyfin.CommercialClip>()
-        val sections = client.loadSections()
-        Log.i(TAG, "sections=${sections.size}")
-        for (section in sections) {
-            if (io.github.madmax3553.staticgroot.jellyfin.CommercialClips.isLibrary(section.title)) {
-                client.loadItems(section.id, "Movie,Video,MusicVideo").mapNotNullTo(commercials) {
-                    io.github.madmax3553.staticgroot.jellyfin.CommercialClips.fromItem(it)
-                }
-                continue
-            }
-            Log.i(TAG, "section '${section.title}' collectionType=${section.collectionType} type=${section.type}")
-            if (section.type == "show") {
-                val series = client.loadSeries(section.id)
-                val episodes = loadEpisodesConcurrently(client, series)
-                items.addAll(episodes)
-                Log.i(TAG, "  series=${series.size} episodes loaded=${episodes.size}")
-                continue
-            }
-            val isMusic = section.type == "musicvideo"
-            val musicVideoCount = if (isMusic) client.countItems(section.id, "MusicVideo") else 0
-            Log.i(TAG, "  isMusic=$isMusic MusicVideo=$musicVideoCount")
-
-            val raw = client.loadMovies(section.id, includeItemTypes = JellyfinMapping.itemTypesFor(isMusic, musicVideoCount))
-            val mapped = raw.mapNotNull { JellyfinMapping.toMediaItem(it, isMusicSection = isMusic) }
-            Log.i(TAG, "  loaded raw=${raw.size} mapped=${mapped.size} (no runtime dropped: ${raw.size - mapped.size})")
-            items.addAll(mapped)
-        }
-
-        // Music genres, artists and years resolved on earlier launches. The pass that fills the
-        // cache runs in the background once the guide is up, so it never delays a launch.
+        val loaded = pipeline.loadAll(client) { text -> runOnUiThread { status.text = text } }
+        val items = loaded.items
+        val commercials = loaded.commercials
         val musicStore = MusicEnrichmentStore(File(filesDir, "music_enrichment_cache.json"))
-        val cachedMusic = musicStore.load()
-        if (cachedMusic.isNotEmpty()) {
-            for (i in items.indices) items[i] = MusicEnrichmentService.apply(listOf(items[i]), cachedMusic).first()
-        }
-        Log.i(TAG, "MUSIC cached rows=${cachedMusic.size} musicVideos=${items.count { it.isMusicVideo }}")
+        Log.i(TAG, "MUSIC musicVideos=${items.count { it.isMusicVideo }}")
 
         val enrichment = enrichItems(items)
 
@@ -457,6 +425,9 @@ class MainActivity : Activity() {
         }
         Log.i(TAG, "LAUNCH cold complete in ${System.currentTimeMillis() - launchStartMs}ms")
         startMusicEnrichment(items, musicStore)
+        if (stationId != null && shared != null && items.isNotEmpty()) {
+            LibraryMaintenance.attachFresh(applicationContext, client, stationId, snapshotStore, items, commercials, publishedMap)
+        }
         runOnUiThread {
             startActivity(Intent(this, GuideActivity::class.java))
             finish()
@@ -550,6 +521,10 @@ class MainActivity : Activity() {
 
             val fastMs = System.currentTimeMillis() - launchStartMs
             Log.i(TAG, "LAUNCH warm fast-path ready in ${fastMs}ms (gen=${setup.generation} targetCh=${runtimeChannels[targetIdx].id} visibleLoaded=$foregroundInstalled)")
+            LibraryMaintenance.attachWarm(
+                applicationContext, client, stationId, snapshotStore,
+                snapshot.items, snapshot.commercials, updatedPublished, snapshot.library,
+            )
             runOnUiThread {
                 startActivity(Intent(this, GuideActivity::class.java))
                 finish()
@@ -634,62 +609,29 @@ class MainActivity : Activity() {
             fetchPool.shutdownNow()
         }
 
-        // If a new broadcast day rolled over and has not been published yet, build pools and publish it.
-        var finalChannels = runtimeChannels
-        if (missingAnyDay) {
-            runCatching {
-                val rawConfig = ChannelConfigLoader.parse(assets.open("channels.json").bufferedReader().use { it.readText() })
-                val config = rawConfig.copy(channels = setup.channels
-                    .filter { it.enabled && it.id < DYNAMIC_CHANNEL_ID_BASE }.map { it.definition })
-                val disabledGenerated = setup.channels.filter { !it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }.map { it.id }.toSet()
-                val serverGenerated = setup.channels.filter { it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE }
-                val memberships = ChannelMemberships.parse(
-                    assets.open("channels-memberships.json").bufferedReader().use { it.readText() },
-                )
-                val enrichment = enrichItems(snapshot.items)
-                val clock = FilterClock(System.currentTimeMillis() / 1000, stationZone)
-                val staticChannels = ChannelPools.buildAll(config, snapshot.items, enrichment = enrichment, memberships = memberships, clock = clock)
-                finalChannels = buildLineup(config, staticChannels, snapshot.items, shared, stationZone, clock, disabledGenerated, serverGenerated)
-                AppSession.channels = finalChannels
-                for (offset in 0L..2L) {
-                    val date = startDate.plusDays(offset)
-                    val dayKey = date.toString()
-                    val dayStart = io.github.madmax3553.staticgroot.schedule.LocalDays.dayStartFor(date, stationZone)
-                    for (ch in finalChannels) {
-                        val key = "${ch.id}|$dayKey"
-                        if (synchronized(updatedPublished) { key !in updatedPublished } && ch.unrestrictedPool.isNotEmpty()) {
-                            val localSched = io.github.madmax3553.staticgroot.schedule.ChannelScheduler(stationZone)
-                            val proposed = localSched.dayBlocks(ch.id, ch.unrestrictedPool, ch.isPremiere, dayStart + 3600)
-                            if (proposed.isNotEmpty()) {
-                                val saved = shared.publish(ch, dayKey, proposed, lookup)
-                                if (saved.isNotEmpty()) {
-                                    AppSession.scheduler?.installPublished(ch.id, dayStart, saved)
-                                    synchronized(updatedPublished) {
-                                        updatedPublished[key] = shared.storedBlocks(saved)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                AppSession.notifySchedulesUpdated()
-            }.onFailure { Log.w(TAG, "LAUNCH background pool/day fill failed (${it.message})") }
-        }
+        // A day that rolled over and is not published yet is built by LibraryMaintenance from the
+        // freshest library, with the don't-repeat rules read from the published days.
+        val finalChannels = runtimeChannels
+        if (missingAnyDay) LibraryMaintenance.requestSoon()
 
         val activeDayKeys = (0L..2L).map { startDate.plusDays(it).toString() }.toSet()
         val prunedPublished = synchronized(updatedPublished) {
             updatedPublished.filterKeys { key -> key.substringAfter('|') in activeDayKeys }
         }
-        snapshotStore.save(
-            snapshot.copy(
-                generation = setup.generation,
-                timeZone = stationZone.id,
-                savedAtEpochSeconds = System.currentTimeMillis() / 1000,
-                lastChannelId = AppSession.lastChannelId,
-                channels = finalChannels.map { it.definition },
-                publishedDays = prunedPublished,
+        // When a day is missing, LibraryMaintenance is already running and saves the snapshot itself;
+        // saving the launch-time copy here could overwrite what it has just updated.
+        if (!missingAnyDay) {
+            snapshotStore.save(
+                snapshot.copy(
+                    generation = setup.generation,
+                    timeZone = stationZone.id,
+                    savedAtEpochSeconds = System.currentTimeMillis() / 1000,
+                    lastChannelId = AppSession.lastChannelId,
+                    channels = finalChannels.map { it.definition },
+                    publishedDays = prunedPublished,
+                )
             )
-        )
+        }
         runCatching { shared.publishCatalog(snapshot.items) }
         val musicStore = MusicEnrichmentStore(File(filesDir, "music_enrichment_cache.json"))
         startMusicEnrichment(snapshot.items, musicStore)
@@ -722,108 +664,16 @@ class MainActivity : Activity() {
         }.apply { isDaemon = true; name = "music-enrichment"; priority = Thread.MIN_PRIORITY }.start()
     }
 
-    /**
-     * The guide's channels: static ones less the seasonal bundles, the one in-season channel, and
-     * channels derived from the library (see [Lineup]). With a shared station the generated ones
-     * are registered on the service first, since it refuses days for channels it does not know;
-     * if it cannot register them they are left out rather than failing the launch.
-     */
+    private val pipeline by lazy { LibraryPipeline(applicationContext) }
+
     private fun buildLineup(
         config: ChannelConfig, static: List<ChannelRuntime>, items: List<MediaItem>,
         shared: io.github.madmax3553.staticgroot.schedule.SharedStation?, zone: ZoneId, clock: FilterClock,
         disabled: Set<Int>, serverGenerated: List<io.github.madmax3553.staticgroot.schedule.SharedChannel>,
-    ): List<ChannelRuntime> {
-        val store = GeneratedChannelStore(File(filesDir, "generated_channels.json"))
-        val lineup = try {
-            Lineup.build(config, static, items, store.load(), java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(zone).toLocalDate())
-        } catch (e: Exception) {
-            Log.w(TAG, "LINEUP failed (${e.javaClass.simpleName}), using the static channels", e)
-            return static
-        }
-        val generatedIds = lineup.generated.map { it.definition.id }.toSet()
-        var channels = lineup.channels
-        var records = lineup.records
-        if (shared != null && (lineup.generated.isNotEmpty() || serverGenerated.isNotEmpty())) {
-            try {
-                val saved = if (lineup.generated.isNotEmpty()) {
-                    shared.addChannels(lineup.generated.map { it.definition }).channels.associateBy { it.id }
-                } else {
-                    serverGenerated.associateBy { it.id }
-                }
-                channels = channels.mapNotNull { rt ->
-                    if (rt.id !in generatedIds) rt
-                    else saved[rt.id]?.takeIf { it.enabled }?.let { ChannelRuntime(it.definition, rt.pool) }
-                }
-                val presentIds = channels.map { it.id }.toSet()
-                val remoteOnly = saved.values
-                    .filter { it.enabled && it.id >= DYNAMIC_CHANNEL_ID_BASE && it.id !in presentIds }
-                    .map { ChannelRuntime(it.definition, emptyList()) }
-                if (remoteOnly.isNotEmpty()) {
-                    channels = (channels + remoteOnly).sortedBy { it.number }
-                }
-                records = records.map { r -> saved[r.id]?.let { r.copy(number = it.definition.number, name = it.name) } ?: r }
-            } catch (e: Exception) {
-                // An older service cannot take generated channels. Fall back to the original lineup,
-                // less any seasonal bundle that is out of season, so in-season channels (already
-                // known to the service) are not lost along with the generated ones.
-                Log.w(TAG, "LINEUP could not register generated channels (${e.message}), using the static lineup")
-                val inSeason = java.time.Instant.ofEpochSecond(clock.nowEpochSeconds).atZone(zone).toLocalDate()
-                val offSeason = config.bundles.filter {
-                    it.activeMonths != null && !io.github.madmax3553.staticgroot.channels.SeasonalChannels.isInSeason(it.activeMonths, inSeason)
-                }.flatMap { it.channelIDs }.toSet()
-                channels = static.filter { it.id !in offSeason }
-                records = emptyList()
-            }
-        } else if (disabled.isNotEmpty()) {
-            channels = channels.filter { it.id !in disabled }
-        }
-        runCatching { store.save(records) }
-        Log.i(TAG, "LINEUP static=${static.size} shown=${channels.size} generated=" +
-            lineup.generated.joinToString { "${it.spec.kind}:${it.definition.name}(${it.pool.size})" })
-        return channels
-    }
+    ): List<ChannelRuntime> = pipeline.buildLineup(config, static, items, shared, zone, clock, disabled, serverGenerated)
 
-    /**
-     * TMDB and OMDb metadata for the rule filter, from the cache and the network. Never throws:
-     * a channel lineup built without enrichment is worse than one built with it, but a launch
-     * that cannot finish is worse than both. Skipped without a TMDB key, as on tvOS.
-     */
-    private fun enrichItems(items: List<MediaItem>): Map<String, MediaEnrichment> = try {
-        val tmdbKey = BuildConfig.TMDB_API_KEY
-        val omdbKey = BuildConfig.OMDB_API_KEY
-        val enrichHttp = HttpUrlJellyfinHttp(readTimeoutMs = 15_000)
-        val service = EnrichmentService(
-            tmdb = if (tmdbKey.isNotBlank()) TmdbClient(enrichHttp, tmdbKey) else null,
-            omdb = if (omdbKey.isNotBlank()) OmdbClient(enrichHttp, omdbKey) else null,
-            store = EnrichmentStore(File(filesDir, "enrichment_cache.json")),
-            log = { Log.i(TAG, "ENRICHMENT $it") },
-        )
-        if (tmdbKey.isBlank()) Log.i(TAG, "ENRICHMENT no TMDB key configured, using cache only")
-        runOnUiThread { status.text = "Reading metadata cache…" }
-        service.enrich(items) { done, total ->
-            runOnUiThread { status.text = "Fetching metadata $done/$total" }
-        }.records
-    } catch (e: Exception) {
-        Log.w(TAG, "ENRICHMENT failed, building channels without it", e)
-        emptyMap()
-    }
-
-    /** Episodes for many series at once. Six requests in flight, as a simple cap. */
-    private fun loadEpisodesConcurrently(client: JellyfinClient, series: List<JellyfinItem>): List<MediaItem> {
-        val pool = Executors.newFixedThreadPool(EPISODE_FETCH_THREADS)
-        try {
-            val futures = series.map { show ->
-                pool.submit<List<MediaItem>> {
-                    client.loadEpisodes(show.Id).mapNotNull { JellyfinMapping.toEpisode(it, show) }
-                }
-            }
-            return futures.flatMap { it.get() }
-        } catch (e: ExecutionException) {
-            throw e.cause ?: e
-        } finally {
-            pool.shutdownNow()
-        }
-    }
+    private fun enrichItems(items: List<MediaItem>): Map<String, MediaEnrichment> =
+        pipeline.enrich(items) { text -> runOnUiThread { status.text = text } }
 
     private fun fail(e: Exception) {
         Log.w(TAG, "sign-in or load failed", e)

@@ -3,6 +3,64 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-16 (library refresh, rolling schedule horizon, library sync between TVs)
+
+**Why.** Since 0.1.35 a warm launch opens the guide from `launch_snapshot.json` and never
+asks Jellyfin for the library again; the snapshot has no expiry. Anything corrected or added
+in Jellyfin after the snapshot was first written stayed wrong in the guide. A series whose
+Jellyfin metadata had been wrongly matched, then fixed, still showed under the wrong name.
+The README also listed the schedule horizon (today plus two days, extended only at launch)
+as "background refresh pending".
+
+**Shipped.** Nothing installed yet. StaticGroot 0.1.37 (38) builds; it has not been run on
+a TV, and the service change has not been deployed to the real host.
+
+**Changed.**
+- `library/LibraryPipeline.kt`: the load, enrich, pool and lineup steps moved out of
+  `MainActivity` so the launch screen and the background refresher run the same code.
+  `MainActivity` now delegates to it. Behaviour of the cold launch is meant to be unchanged.
+- `library/LibraryMaintenance.kt`: after launch, one low-priority thread wakes every 15
+  minutes and (1) reads the shared service's library revision, (2) checks Jellyfin with a few
+  tiny count requests plus `MinDateLastSaved`, reloading only changed series and movies, or
+  everything after a deletion, a first run, or three days, (3) keeps `HORIZON_DAYS = 3` days
+  published, building and publishing the next day after each 03:00 rollover from the freshest
+  library. Pools are built only when a reload or a missing day needs them, because a warm
+  launch starts with placeholder pools.
+- New days read "yesterday" for the don't-repeat rules from the published days (shared by
+  every TV) instead of the per-TV `day_history` files, which only record days that TV built.
+  Warm-launch builds used no history at all.
+- `schedule-service.cjs`: `GET/POST /library` keeps a revision per station. A new content
+  stamp raises it. Publishing a new day with an older `libraryRevision` gets 409, so a TV
+  with a stale library cannot lock in a day. The catalog upload is refused the same way.
+  Requests without the field, and an older service without the route, behave as before.
+- Snapshot has an optional `library` block (stamp, revision, last check, counts, last full
+  load). Every field defaults, so existing snapshots load. An old snapshot has no record of
+  ever being checked, so the first maintenance pass does one full reload.
+- Titles on already published days follow the library at once: blocks store only item ids.
+
+**Half-done.**
+- Not installed on any TV, so none of this has been seen working on hardware. Things to
+  check there: that `MinDateLastSaved` is honoured by the server (log line `LIBRARY check`),
+  warm launch time stays near its current value, a full reload does not hurt a Fire TV Stick
+  during playback, and day 3 is built after 03:00.
+- The service must be redeployed for revision sync. Without it the app falls back to
+  checking Jellyfin on its own, but TVs do not tell each other.
+- The time-based change check uses the TV's clock with a 10 minute overlap. A badly wrong
+  TV clock could miss changes; the three-day full reload bounds that.
+- A deletion that is balanced by an addition leaves the removed item in the saved library
+  until the three-day full reload.
+- Items that get a new Jellyfin id (delete and re-add) still turn their published slots into
+  station breaks; no remapping by TMDB id.
+- No automated tests were added; the project does not use them. Checked by hand against a
+  scratch copy of the service (revision bump, stale-library 409, old clients).
+
+**Next.**
+- Ask before installing. Install on the Sony first, read the `LIBRARY` log lines, then the
+  Fire TV Stick.
+- Consider letting a slow TV opt out of building days (publish only from the fast one), or
+  moving schedule building onto the service. The service has no Jellyfin access today, by
+  design, and the pool, packer and reshuffler logic would need porting to JavaScript.
+
 ## 2026-11-14 (AV1 and Opus direct play, seek and program info in playback)
 
 **Why.** Captain America and other 2160p HEVC titles timed out in transcode on a Sony

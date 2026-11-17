@@ -38,12 +38,17 @@ class CompanionSettings(context: Context) {
 @Serializable data class StoredBlock(val itemId: String, val startUnix: Long, val endUnix: Long,
     val isBumper: Boolean, val mediaOffsetSeconds: Long, val isMidBreak: Boolean,
     val movieIdentity: String? = null)
-@Serializable data class SharedDay(val blocks: List<StoredBlock>, val generation: Int = 0)
+@Serializable data class SharedDay(val blocks: List<StoredBlock>, val generation: Int = 0,
+    /** The library revision the publisher had seen. The service refuses a new day from an older one. */
+    val libraryRevision: Int? = null)
+@Serializable data class LibraryState(val revision: Int = 0, val stamp: String = "", val itemCount: Int = 0,
+    val updatedAt: Long = 0)
 @Serializable data class RegenerationDay(val channelId: Int, val dayKey: String, val blocks: List<StoredBlock>)
 @Serializable data class Regeneration(val generation: Int, val days: List<RegenerationDay>)
 @Serializable data class Selection(val channelId: Int? = null)
 @Serializable data class CatalogItem(val id: String, val title: String, val type: String, val seriesId: String?)
-@Serializable data class Catalog(val items: List<CatalogItem>)
+@Serializable data class Catalog(val items: List<CatalogItem>, val libraryRevision: Int? = null)
+@Serializable private data class LibraryPost(val stamp: String, val itemCount: Int)
 
 class SharedStation(val base: String, stationId: String) {
     private val http = HttpUrlJellyfinHttp()
@@ -51,10 +56,25 @@ class SharedStation(val base: String, stationId: String) {
     private val headers = mapOf("Accept" to "application/json")
     private val root = "$base/v1/stations/$stationId"
     private var generation = 0
+    val generationNow: Int get() = generation
+    /** Sent with every new day and the catalog. Null until this TV has read the service's library state. */
+    @Volatile var libraryRevision: Int? = null
+
     fun publishCatalog(items: List<MediaItem>) {
         http.post("$root/catalog", headers, json.encodeToString(Catalog.serializer(),
-            Catalog(items.map { CatalogItem(it.id, it.title, it.type.raw, it.seriesId) })))
+            Catalog(items.map { CatalogItem(it.id, it.title, it.type.raw, it.seriesId) }, libraryRevision)))
     }
+
+    /** The service's view of the library. An older service has no such route and throws. */
+    fun library(): LibraryState = json.decodeFromString(LibraryState.serializer(), http.get("$root/library", headers))
+
+    /** Tells the service what this TV loaded. A new stamp raises the revision for every TV. */
+    fun postLibrary(stamp: String, itemCount: Int): LibraryState = json.decodeFromString(
+        LibraryState.serializer(), http.post("$root/library", headers,
+            json.encodeToString(LibraryPost.serializer(), LibraryPost(stamp, itemCount))))
+
+    /** Re-reads the channel setup and its version, for the periodic check. */
+    fun currentSetup(): StationSetup = json.decodeFromString(StationSetup.serializer(), http.get("$root/setup", headers))
 
     fun setup(definitions: List<ChannelDefinition>, zone: String): StationSetup = json.decodeFromString(
         StationSetup.serializer(), http.post("$root/setup", headers, json.encodeToString(
@@ -73,7 +93,7 @@ class SharedStation(val base: String, stationId: String) {
                 definitions.map { SharedChannel(it.id, it.name, definition = it) })))).also { generation = it.generation }
 
     fun publish(ch: ChannelRuntime, dayKey: String, blocks: List<Block>, items: Map<String, MediaItem>): List<Block> {
-        val proposal = SharedDay(storedBlocks(blocks), generation)
+        val proposal = SharedDay(storedBlocks(blocks), generation, libraryRevision)
         val saved = json.decodeFromString(SharedDay.serializer(), http.post(
             "$root/days/${ch.id}/$dayKey", headers, json.encodeToString(SharedDay.serializer(), proposal)))
         return resolve(saved, items)

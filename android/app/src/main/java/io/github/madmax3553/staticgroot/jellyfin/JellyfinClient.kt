@@ -79,40 +79,62 @@ class JellyfinClient(
         .flatMap { loadItems(it.id, "Movie,Video,MusicVideo") }
         .mapNotNull(CommercialClips::fromItem).distinctBy { it.id }
 
-    fun countItems(parentId: String, includeItemTypes: String): Int {
-        val body = http.get(
-            url(
-                "/Items",
-                "userId" to userId,
-                "ParentId" to parentId,
-                "Recursive" to "true",
-                "IncludeItemTypes" to includeItemTypes,
-                "Limit" to "0",
-            ),
-            headers(),
-        )
+    /**
+     * [minDateLastSaved] (ISO-8601 UTC) keeps only items the server saved since then. That is
+     * Jellyfin's own change marker: a metadata edit, a re-identify or a new file all move it.
+     */
+    fun countItems(parentId: String, includeItemTypes: String, minDateLastSaved: String? = null): Int {
+        val query = ArrayList<Pair<String, String>>().apply {
+            add("userId" to userId)
+            add("ParentId" to parentId)
+            add("Recursive" to "true")
+            add("IncludeItemTypes" to includeItemTypes)
+            add("Limit" to "0")
+            if (minDateLastSaved != null) add("MinDateLastSaved" to minDateLastSaved)
+        }
+        val body = http.get(url("/Items", *query.toTypedArray()), headers())
         return json.decodeFromString(ItemsResponse.serializer(), body).TotalRecordCount ?: 0
     }
 
-    /** All items of [includeItemTypes] directly under a parent, paged until the total is read. */
-    fun loadItems(parentId: String, includeItemTypes: String): List<JellyfinItem> {
+    /**
+     * A few tiny requests that say whether the library may have changed: raw item counts per
+     * library, and how many items were saved since [sinceIso]. No item data is read.
+     * Counts are keyed "libraryId|ItemType".
+     */
+    fun probeLibrary(sinceIso: String?): LibraryProbe {
+        val counts = LinkedHashMap<String, Int>()
+        var changed = 0
+        for (section in loadSections()) {
+            if (CommercialClips.isLibrary(section.title)) continue
+            val types = if (section.type == "show") listOf("Series", "Episode") else listOf("Movie,MusicVideo")
+            for (type in types) {
+                counts["${section.id}|$type"] = countItems(section.id, type)
+                if (sinceIso != null) changed += countItems(section.id, type, sinceIso)
+            }
+        }
+        return LibraryProbe(counts, changed)
+    }
+
+    /**
+     * All items of [includeItemTypes] under a parent, paged until the total is read. With
+     * [minDateLastSaved], only those saved since then.
+     */
+    fun loadItems(parentId: String, includeItemTypes: String, minDateLastSaved: String? = null): List<JellyfinItem> {
         val collected = ArrayList<JellyfinItem>()
         var start = 0
         while (true) {
-            val body = http.get(
-                url(
-                    "/Items",
-                    "userId" to userId,
-                    "ParentId" to parentId,
-                    "Recursive" to "true",
-                    "IncludeItemTypes" to includeItemTypes,
-                    "Fields" to "ProviderIds,Genres,Studios,MediaSources,ProductionYear,PremiereDate,DateCreated,UserData,Overview",
-                    "StartIndex" to start.toString(),
-                    "Limit" to PAGE_SIZE.toString(),
-                    "SortBy" to "SortName",
-                ),
-                headers(),
-            )
+            val query = ArrayList<Pair<String, String>>().apply {
+                add("userId" to userId)
+                add("ParentId" to parentId)
+                add("Recursive" to "true")
+                add("IncludeItemTypes" to includeItemTypes)
+                add("Fields" to "ProviderIds,Genres,Studios,MediaSources,ProductionYear,PremiereDate,DateCreated,UserData,Overview")
+                add("StartIndex" to start.toString())
+                add("Limit" to PAGE_SIZE.toString())
+                add("SortBy" to "SortName")
+                if (minDateLastSaved != null) add("MinDateLastSaved" to minDateLastSaved)
+            }
+            val body = http.get(url("/Items", *query.toTypedArray()), headers())
             val page = json.decodeFromString(ItemsResponse.serializer(), body)
             val items = page.Items.orEmpty()
             collected.addAll(items)
@@ -124,11 +146,12 @@ class JellyfinClient(
     }
 
     /** Movies (Jellyfin's flat item type) under a library. */
-    fun loadMovies(parentId: String, includeItemTypes: String = "Movie"): List<JellyfinItem> =
-        loadItems(parentId, includeItemTypes)
+    fun loadMovies(parentId: String, includeItemTypes: String = "Movie", minDateLastSaved: String? = null): List<JellyfinItem> =
+        loadItems(parentId, includeItemTypes, minDateLastSaved)
 
     /** Series under a TV library. */
-    fun loadSeries(parentId: String): List<JellyfinItem> = loadItems(parentId, "Series")
+    fun loadSeries(parentId: String, minDateLastSaved: String? = null): List<JellyfinItem> =
+        loadItems(parentId, "Series", minDateLastSaved)
 
     /** Episodes of one series. */
     fun loadEpisodes(seriesId: String): List<JellyfinItem> = loadItems(seriesId, "Episode")
@@ -306,6 +329,9 @@ class JellyfinClient(
 }
 
 data class AuthResult(val accessToken: String, val userId: String, val serverId: String)
+
+/** What [JellyfinClient.probeLibrary] saw. [changed] is items saved since the time asked about. */
+data class LibraryProbe(val counts: Map<String, Int>, val changed: Int)
 
 data class DiscoveredServer(val url: String, val name: String)
 

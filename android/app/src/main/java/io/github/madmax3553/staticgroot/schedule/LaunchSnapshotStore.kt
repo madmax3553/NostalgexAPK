@@ -8,6 +8,26 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
+/**
+ * What the saved library was last checked against. Every field has a default, so a snapshot
+ * written before this existed still loads; it reads as "never checked" and reloads once.
+ */
+@Serializable
+data class LibraryMeta(
+    /** Content hash of the items, the same on every TV that loaded the same Jellyfin data. */
+    val stamp: String = "",
+    /** The shared service's library revision this TV last saw or posted. */
+    val revision: Int = 0,
+    /** UTC ISO time the Jellyfin change check last ran. Empty: never. */
+    val probeAtIso: String = "",
+    /** Raw Jellyfin item counts per library at the last check, keyed "libraryId|ItemType". */
+    val counts: Map<String, Int> = emptyMap(),
+    /** Epoch seconds of the last load of the whole library. 0: never recorded. */
+    val fullLoadAt: Long = 0L,
+    /** The shared channel setup version this TV last built its lineup from. */
+    val setupVersion: Int = 0,
+)
+
 @Serializable
 data class LaunchSnapshot(
     val version: Int = 1,
@@ -21,6 +41,7 @@ data class LaunchSnapshot(
     val commercials: List<CommercialClip> = emptyList(),
     /** Keyed by "$channelId|$dayKey" for [generation]. */
     val publishedDays: Map<String, List<StoredBlock>> = emptyMap(),
+    val library: LibraryMeta = LibraryMeta(),
 )
 
 /**
