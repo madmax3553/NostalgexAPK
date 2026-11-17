@@ -12,8 +12,9 @@ Jellyfin metadata had been wrongly matched, then fixed, still showed under the w
 The README also listed the schedule horizon (today plus two days, extended only at launch)
 as "background refresh pending".
 
-**Shipped.** Nothing installed yet. StaticGroot 0.1.37 (38) builds; it has not been run on
-a TV, and the service change has not been deployed to the real host.
+**Shipped.** StaticGroot 0.1.37 (38) debug build installed on the Sony Android TV and the
+Fire TV Stick. The shared service was redeployed with the library route, keeping its data
+(same generation, channels and published days).
 
 **Changed.**
 - `library/LibraryPipeline.kt`: the load, enrich, pool and lineup steps moved out of
@@ -38,25 +39,35 @@ a TV, and the service change has not been deployed to the real host.
   ever being checked, so the first maintenance pass does one full reload.
 - Titles on already published days follow the library at once: blocks store only item ids.
 
+**Measured.** Both TVs found their old snapshot had never been checked, so each did one
+full reload on its first pass (about 90 seconds after launch), against a library of roughly
+2,400 items. Sony: warm launch 1.0 s, whole pass 13 s, of which building pools and lineup 4 s.
+Fire TV Stick: warm launch 2.4 s, whole pass 19 s, of which pools and lineup 8 s, app at
+about 57 MB PSS, no crash. A show whose metadata had been corrected in Jellyfin after the
+snapshot was written now appears under its correct name. The two TVs computed the same
+content stamp independently, the service holds it at revision 1, and nothing ping-ponged.
+
 **Half-done.**
-- Not installed on any TV, so none of this has been seen working on hardware. Things to
-  check there: that `MinDateLastSaved` is honoured by the server (log line `LIBRARY check`),
-  warm launch time stays near its current value, a full reload does not hurt a Fire TV Stick
-  during playback, and day 3 is built after 03:00.
-- The service must be redeployed for revision sync. Without it the app falls back to
-  checking Jellyfin on its own, but TVs do not tell each other.
+- Not yet seen: the next-day build. All three days were already published, so the horizon
+  step had nothing to do. It should run for the first time after the 03:00 rollover; check
+  that the service has the day three ahead for every channel (`GET .../days/{channel}/{date}`).
+- Not yet seen: the incremental path. The first pass had no earlier check time, so it was
+  a full reload. The next hourly pass should log `LIBRARY check` with `changed=0` if the
+  server honours `MinDateLastSaved`; a nonzero count with no edits would mean it ignores it.
+- The Fire TV Stick's display was off during its pass, so playback stutter during a reload
+  has not been observed on it.
 - The time-based change check uses the TV's clock with a 10 minute overlap. A badly wrong
   TV clock could miss changes; the three-day full reload bounds that.
 - A deletion that is balanced by an addition leaves the removed item in the saved library
   until the three-day full reload.
 - Items that get a new Jellyfin id (delete and re-add) still turn their published slots into
   station breaks; no remapping by TMDB id.
-- No automated tests were added; the project does not use them. Checked by hand against a
-  scratch copy of the service (revision bump, stale-library 409, old clients).
+- No automated tests were added; the project does not use them. Server behaviour was checked
+  by hand against a scratch copy (revision bump, stale-library 409, old clients).
 
 **Next.**
-- Ask before installing. Install on the Sony first, read the `LIBRARY` log lines, then the
-  Fire TV Stick.
+- After 03:00, confirm the new day was built and published, and read the `LIBRARY` lines.
+- Watch the next hourly `LIBRARY check` for `MinDateLastSaved`.
 - Consider letting a slow TV opt out of building days (publish only from the fast one), or
   moving schedule building onto the service. The service has no Jellyfin access today, by
   design, and the pool, packer and reshuffler logic would need porting to JavaScript.
