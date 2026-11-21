@@ -3,6 +3,71 @@
 Why things changed, and what state they were left in. Newest first.
 Commits carry the detail of *what*; this carries the *why*.
 
+## 2026-11-20 (failed streams recorded on the shared service, spinner while tuning)
+
+**Why.** Streams still fail to start on the Sony Android TV, and the TV's own log could not
+say why. Its main log buffer is 1 MiB and held about 100 minutes; by the time it was read,
+every `VIDEO` line from the failures had been overwritten. The shared service only had the
+existing playback observations, which record a bare "failure" with zero timings and nothing
+at all when the stream never resolved.
+
+**Found, from the service's playback records and the Jellyfin log.** On the day examined the
+TV recorded 55 successful plays and two failures, 46 seconds apart, on two channels:
+- a 1080p H.264 remux at 33.6 Mbps, joined about 38 minutes in: no first frame for 30
+  seconds, then the stall watchdog stopped it;
+- a 1080p H.264 episode at 11 Mbps, joined about 18 minutes in: failed 5 seconds after a
+  retune, which is too fast for the watchdog and so was a player error. The same file had
+  played on the same TV the day before.
+
+Both were direct play; Jellyfin started no transcode in the three days of logs read. Every
+success that day was a file between 0.5 and 2.4 Mbps. Ruled out: the files (both have a valid
+Matroska seek index; the remux has a keyframe about every second at the failing offset, with
+audio and video interleaved), disk speed (186 MB/s on uncached reads of the remux) and server
+load (load average 0.39 when checked that evening). The cause is not established. Two files on two disks failing
+within a minute points at the TV or the network path, not the media. Which address the TV
+was using for Jellyfin (LAN or Tailscale) was not checked.
+
+The stall watchdog is 30 seconds (`StallWatch.LIMIT_MS`) and was never 60. It was left alone.
+
+**Shipped.** Nothing yet. StaticGroot 0.1.38 (39) builds; it is not installed on either TV
+and the shared service has not been redeployed.
+
+**Changed.**
+- `server/failure-log.cjs` and `POST/GET /v1/stations/{station}/failures`: the service
+  appends each failed stream to `failures.jsonl` in the station folder. Lines older than 7
+  days are dropped on every write and never returned, and at most 1,000 lines are kept, so
+  the log cannot grow without limit. `GET` returns newest first and adds the title from the
+  uploaded catalog. The Dockerfile copies the new file.
+- `TunerPlayback.kt`: reports a failure from all four paths: player error, stall watchdog
+  (before or after first frame), Jellyfin offering no stream, and the PlaybackInfo request
+  failing. The last two were never recorded anywhere before. A report carries the app
+  version, device model, channel, item and source ids, direct or transcode, the bitrate and
+  height asked for, offset, player error code, exception class names (with the HTTP status
+  for a bad response), time since tune, whether a frame showed, time buffering, loads and
+  bytes completed, and whether Jellyfin was reached by LAN, Tailscale or another route.
+  Exception messages, URLs and addresses are not sent, because they can carry the token.
+- `GuideActivity.kt`: a cyan spinner above the status text while `TUNING…` or `BUFFERING…`
+  is showing, in the tuner window and fullscreen, so a slow start is visibly still working.
+  It is hidden for the end states (off air, playback failed, stream did not start, could
+  not tune). No timing or retry behaviour changed.
+
+**Measured.** Against a scratch copy of the service: a valid report is stored, a bad kind
+and a malformed cause list get 400, a line dated 8 days back is hidden from `GET` and gone
+after the next write while one dated 6 days back stays, 1,005 further posts leave exactly
+1,000 lines (397 KB), and `/library` still answers.
+
+**Half-done.**
+- Not run on a TV. The spinner and the reports are unverified on device.
+- The service must be redeployed before reports are stored. Against the old service the
+  app's post is refused and ignored.
+- A failure caused by the network being down cannot reach the service and is not queued.
+  A TV on local scheduling (no shared service) records nothing.
+- The old playback observations (up to 32 per item, per file) are not pruned by age.
+
+**Next.** Redeploy the service and install 0.1.38 on both TVs, then tune a high-bitrate
+title on the Sony and read `GET .../failures` for the error code and the route. Decide on a
+60 second watchdog from what the records show, not before.
+
 ## 2026-11-16 (library refresh, rolling schedule horizon, library sync between TVs)
 
 **Why.** Since 0.1.35 a warm launch opens the guide from `launch_snapshot.json` and never
