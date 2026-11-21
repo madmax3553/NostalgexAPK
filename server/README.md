@@ -133,6 +133,8 @@ All requests require `Authorization: Bearer <service-key>`.
 | `POST /v1/stations/{station}/catalog` | Upload the item to series map used by the overlap audit. With `libraryRevision` below the current one it is refused with 409 |
 | `GET /v1/stations/{station}/playback?itemId=&source=&device=` | Read a playback profile |
 | `POST /v1/stations/{station}/playback` | Record a playback observation |
+| `POST /v1/stations/{station}/failures` | Record a failed stream |
+| `GET /v1/stations/{station}/failures?limit=` | Read failed streams from the last 7 days, newest first (default 200) |
 
 Station IDs are SHA-256 of the Jellyfin server ID and user ID. They are not secrets;
 the service key controls access. The service never receives the Jellyfin login token.
@@ -165,3 +167,25 @@ library background probe yet. Sources without ETag are not treated as reusable.
 
 `GET /v1/stations/{station}/playback?itemId=...&source=...&device=...` retrieves a
 profile. `POST` to the same path records an observation. Both require authentication.
+
+## Failed streams
+
+A TV's own log holds about an hour, so a failure reported the next day is already gone
+from it. The app therefore posts every failed stream to `/failures`, and the service
+appends it to `failures.jsonl` in the station folder.
+
+- `kind` is one of `player_error` (the player raised an error), `stall_start` (no picture
+  within the watchdog limit), `stall_rebuffer` (buffering for longer than the limit after
+  the picture had started), `no_stream` (Jellyfin offered nothing playable) and
+  `tune_failed` (the PlaybackInfo request failed).
+- Each line also has the app version, device model, channel, item and media source ids,
+  direct play or transcode, the bitrate and height asked for, the offset into the
+  program, the player's error code and the exception class names behind it, the time
+  since the tune, whether a picture had shown, time spent buffering, loads and bytes
+  completed, and whether the TV reached Jellyfin over the LAN, Tailscale or another route.
+- Exception messages and URLs are never sent, because they can carry the access token.
+- Lines older than 7 days are dropped on every write and are never returned. At most
+  1,000 lines are kept, so a TV failing in a loop cannot fill the disk.
+- `GET` adds the item `title` from the uploaded catalog when it has one.
+- Reports are best effort. A failure caused by the network being down is not queued, and
+  a TV on local scheduling (no shared service) records nothing.

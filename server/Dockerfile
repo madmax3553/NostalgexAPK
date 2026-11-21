@@ -1,6 +1,6 @@
 FROM node:22-alpine
 WORKDIR /app
-COPY schedule-service.cjs playback-profiles.cjs ./
+COPY schedule-service.cjs playback-profiles.cjs failure-log.cjs ./
 RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data

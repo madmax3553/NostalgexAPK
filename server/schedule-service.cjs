@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { PlaybackProfiles } = require('./playback-profiles.cjs');
+const { FailureLog } = require('./failure-log.cjs');
 
 class StationStore {
   constructor(directory) {
@@ -231,6 +232,15 @@ function createServer({ directory, token } = {}) {
         if (req.method === 'GET') {
           const query = new URL(req.url, 'http://localhost').searchParams;
           return reply(200, profiles.get(query.get('itemId'), query.get('source'), query.get('device')));
+        }
+      }
+      if (parts[3] === 'failures' && parts.length === 4) {
+        const failures = new FailureLog(path.join(store.stationPath(station), 'failures.jsonl'));
+        if (req.method === 'POST') return reply(200, failures.add(body));
+        if (req.method === 'GET') {
+          const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit') || 200);
+          const catalog = store.read(path.join(store.stationPath(station), 'catalog.json')) || {};
+          return reply(200, { failures: failures.recent(limit).map(f => ({ ...f, title: catalog[f.itemId]?.title ?? null })) });
         }
       }
       if (parts[3] === 'regenerate' && parts.length === 4 && req.method === 'POST')
