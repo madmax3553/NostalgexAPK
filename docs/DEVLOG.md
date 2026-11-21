@@ -29,8 +29,10 @@ was using for Jellyfin (LAN or Tailscale) was not checked.
 
 The stall watchdog is 30 seconds (`StallWatch.LIMIT_MS`) and was never 60. It was left alone.
 
-**Shipped.** Nothing yet. StaticGroot 0.1.38 (39) builds; it is not installed on either TV
-and the shared service has not been redeployed.
+**Shipped.** StaticGroot 0.1.38 (39) debug build installed on the Sony Android TV and the
+Fire TV Stick. The shared service was rebuilt and redeployed on the same data volume
+(library revision, setup and published days read back unchanged; `GET .../failures` answers
+with an empty list). The previous image is kept, tagged 0.1.37, for rollback.
 
 **Changed.**
 - `server/failure-log.cjs` and `POST/GET /v1/stations/{station}/failures`: the service
@@ -57,15 +59,16 @@ after the next write while one dated 6 days back stays, 1,005 further posts leav
 1,000 lines (397 KB), and `/library` still answers.
 
 **Half-done.**
-- Not run on a TV. The spinner and the reports are unverified on device.
-- The service must be redeployed before reports are stored. Against the old service the
-  app's post is refused and ignored.
+- Barely run on a TV. After install the Sony warm-launched in 1.6 s and showed a first frame
+  by direct play in 2.1 s, then left the foreground 3 seconds later. The Fire TV Stick
+  launched with its display asleep and played nothing. Nobody has looked at the spinner, and
+  no failure has been recorded yet, so the report path is unverified end to end.
 - A failure caused by the network being down cannot reach the service and is not queued.
   A TV on local scheduling (no shared service) records nothing.
 - The old playback observations (up to 32 per item, per file) are not pruned by age.
 
-**Next.** Redeploy the service and install 0.1.38 on both TVs, then tune a high-bitrate
-title on the Sony and read `GET .../failures` for the error code and the route. Decide on a
+**Next.** Tune a high-bitrate title on the Sony, look at the spinner, and read
+`GET .../failures` for the error code and the route. Decide on a
 60 second watchdog from what the records show, not before.
 
 ## 2026-11-16 (library refresh, rolling schedule horizon, library sync between TVs)
