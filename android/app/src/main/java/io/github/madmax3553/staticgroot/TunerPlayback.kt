@@ -20,8 +20,10 @@ import java.util.concurrent.Executors
 
 /** One player for the tuner and fullscreen. All player access stays on the main thread. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class TunerPlayback(context: Context, private val status: (String) -> Unit,
+class TunerPlayback(context: Context, private val statusSink: (String, Boolean) -> Unit,
     private val changed: () -> Unit) {
+    /** [busy] is true while something is still being attempted, so the guide can show a spinner. */
+    private fun status(text: String, busy: Boolean = false) = statusSink(text, busy)
     private val appContext = context.applicationContext
     private val http = DefaultHttpDataSource.Factory()
         .setConnectTimeoutMs(10000).setReadTimeoutMs(15000)
@@ -72,6 +74,12 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
     private var bufferingSince = 0L
     private var partIndex = 0
     private var partStartSeconds = 0L
+    /** What the current load asked for, and how far it got, for the failure report. */
+    private var loadItemId: String? = null
+    private var loadSourceId: String? = null
+    private var loadOffsetSeconds = 0L
+    private var loadsCompleted = 0
+    private var loadedBytes = 0L
 
     fun setCaptions(enabled: Boolean) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -131,6 +139,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
                 mediaLoadData: MediaLoadData) {
                 Log.i("StaticGroot", "VIDEO loaded bytes=${loadEventInfo.bytesLoaded} ms=${loadEventInfo.loadDurationMs}")
+                loadsCompleted++
+                loadedBytes += loadEventInfo.bytesLoaded
             }
         })
         player.addListener(object : Player.Listener {
@@ -152,7 +162,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             override fun onPlaybackStateChanged(state: Int) {
                 Log.i("StaticGroot", "VIDEO state=$state positionMs=${player.currentPosition}")
                 bufferingSince = if (state == Player.STATE_BUFFERING) System.currentTimeMillis() else 0L
-                if (state == Player.STATE_BUFFERING) status("BUFFERING…")
+                if (state == Player.STATE_BUFFERING) status("BUFFERING…", busy = true)
                 if (state == Player.STATE_READY && firstFrame) status("")
                 if (state == Player.STATE_ENDED) {
                     if (commercialPlaying) nextCommercial() else if (!playNextPart()) advance()
@@ -161,6 +171,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             override fun onPlayerError(error: PlaybackException) {
                 // Do not log nested exception text: data-source errors can contain token-bearing URLs.
                 Log.w("StaticGroot", "VIDEO error=${error.errorCodeName}")
+                reportFailure("player_error", error.errorCodeName, error.cause)
                 reportObservation("failure")
                 if (commercialPlaying) { generation++; commercialPlaying = false; ads.clear(); player.stop(); endSession(); status(""); changed(); return }
                 status("PLAYBACK FAILED: ${error.errorCodeName}\nPress OK to retry")
@@ -278,7 +289,12 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         observationSent = false
         startupMs = 0
         startedAt = System.currentTimeMillis()
-        status("TUNING…")
+        loadItemId = itemId
+        loadSourceId = mediaSourceId
+        loadOffsetSeconds = elapsed
+        loadsCompleted = 0
+        loadedBytes = 0
+        status("TUNING…", busy = true)
         network.execute {
             try {
                 val resolution = client.resolvePlayback(itemId, mediaSourceId, forceDirect = itemId in directItems)
@@ -289,6 +305,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                     }
                     pending = false
                     if (resolution == null) {
+                        reportFailure("no_stream", null, null)
                         if (commercialPlaying) { commercialPlaying = false; ads.clear(); status(""); changed(); return@post }
                         status("OFF AIR\nJellyfin offered no playable stream. Press OK to retry")
                         return@post
@@ -307,6 +324,8 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
                 handler.post {
                     if (token == generation && active && !released) {
                         pending = false
+                        reportFailure("tune_failed",
+                            (e as? io.github.madmax3553.staticgroot.jellyfin.JellyfinException)?.status?.let { "HTTP $it" }, e)
                         if (commercialPlaying) { commercialPlaying = false; ads.clear(); status(""); changed(); return@post }
                         status("COULD NOT TUNE\n${e.message ?: "Request failed"}\nPress OK to retry")
                     }
@@ -359,6 +378,7 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
             if (!pending && player.playbackState == Player.STATE_BUFFERING &&
                 StallWatch.stalled(firstFrame, System.currentTimeMillis() - startedAt,
                     if (bufferingSince > 0) System.currentTimeMillis() - bufferingSince else 0)) {
+                reportFailure(if (firstFrame) "stall_rebuffer" else "stall_start", null, null)
                 reportObservation("failure")
                 player.stop()
                 endSession()
@@ -422,6 +442,32 @@ class TunerPlayback(context: Context, private val status: (String) -> Unit,
         loadStream(next.id, 0, generation)
     }
     private var currentAdDuration = 0L
+
+    /** Sends what is known about a failed stream to the shared service. Call before the player is stopped. */
+    private fun reportFailure(kind: String, errorCode: String?, cause: Throwable?) {
+        val shared = AppSession.sharedStation ?: return
+        val now = System.currentTimeMillis()
+        val resolution = learningResolution
+        val causes = generateSequence(cause) { it.cause }.take(6).map {
+            val code = (it as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+            it.javaClass.simpleName.ifEmpty { "Throwable" } + (code?.let { c -> "($c)" } ?: "")
+        }.toList()
+        val failure = io.github.madmax3553.staticgroot.jellyfin.PlaybackFailure(
+            kind = kind, appVersion = BuildConfig.VERSION_NAME, device = android.os.Build.MODEL.orEmpty().take(64).ifEmpty { "unknown" },
+            route = io.github.madmax3553.staticgroot.jellyfin.NetworkRoute.of(AppSession.client?.serverUrl),
+            channelId = channel?.id, itemId = loadItemId, mediaSourceId = loadSourceId,
+            commercial = commercialPlaying, direct = resolution?.isDirectPlay,
+            maxBitrate = resolution?.settings?.maxBitrate, maxHeight = resolution?.settings?.maxHeight,
+            offsetSeconds = loadOffsetSeconds.coerceAtLeast(0), errorCode = errorCode, causes = causes,
+            sinceTuneMs = (now - startedAt).coerceAtLeast(0), firstFrame = firstFrame,
+            bufferingMs = if (bufferingSince > 0) (now - bufferingSince).coerceAtLeast(0) else 0,
+            positionMs = player.currentPosition.coerceAtLeast(0), loads = loadsCompleted, loadedBytes = loadedBytes)
+        if (!cleanup.isShutdown) cleanup.execute {
+            runCatching { shared.reportFailure(failure) }
+                .onSuccess { Log.i("StaticGroot", "PLAYBACK failure recorded kind=$kind") }
+                .onFailure { Log.w("StaticGroot", "PLAYBACK failure not recorded") }
+        }
+    }
 
     private fun reportObservation(outcome: String) {
         val resolution = learningResolution ?: return

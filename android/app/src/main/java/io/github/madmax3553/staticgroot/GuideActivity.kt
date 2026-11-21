@@ -47,6 +47,8 @@ class GuideActivity : Activity() {
     private lateinit var displaySettings: DisplaySettings
     private lateinit var grid: GuideGrid
     private lateinit var message: TextView
+    private lateinit var messageBox: LinearLayout
+    private lateinit var spinner: ProgressBar
     private lateinit var description: TextView
     private lateinit var programProgress: ProgressBar
     private lateinit var settings: TextView
@@ -104,12 +106,23 @@ class GuideActivity : Activity() {
         video = PlayerView(this).apply { useController = false; isFocusable = false }
         retroOverlay = RetroOverlay(this)
         bumper = BumperView(this).apply { visibility = View.GONE }
-        message = label("", 20f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setBackgroundColor(0x88000000.toInt()) }
+        message = label("", 20f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+        spinner = ProgressBar(this).apply {
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(GrootBrand.CYAN)
+            visibility = View.GONE
+        }
+        messageBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setBackgroundColor(0x88000000.toInt())
+            addView(spinner, LinearLayout.LayoutParams(dp(40), dp(40)).apply { bottomMargin = dp(8) })
+            addView(message, LinearLayout.LayoutParams(-1, -2))
+        }
         videoBox = FrameLayout(this).apply {
             addView(video, FrameLayout.LayoutParams(-1, -1))
             addView(bumper, FrameLayout.LayoutParams(-1, -1))
             addView(retroOverlay, FrameLayout.LayoutParams(-1, -1))
-            addView(message, FrameLayout.LayoutParams(-1, -1))
+            addView(messageBox, FrameLayout.LayoutParams(-1, -1))
         }
         top.addView(info)
         top.addView(videoBox)
@@ -128,9 +141,10 @@ class GuideActivity : Activity() {
         root.addView(top)
         root.addView(grid)
         setContentView(root)
-        playback = TunerPlayback(this, { text ->
+        playback = TunerPlayback(this, { text, busy ->
             message.text = text
-            message.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+            spinner.visibility = if (busy) View.VISIBLE else View.GONE
+            messageBox.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
         }, { showInfo() })
         video.player = playback.player
         playback.setCaptions(displaySettings.captionsEnabled)

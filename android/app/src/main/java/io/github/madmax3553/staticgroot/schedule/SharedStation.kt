@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import java.security.MessageDigest
 import java.net.URLEncoder
 import io.github.madmax3553.staticgroot.jellyfin.LearnedPlayback
+import io.github.madmax3553.staticgroot.jellyfin.PlaybackFailure
 import io.github.madmax3553.staticgroot.jellyfin.PlaybackObservation
 
 /**
@@ -170,6 +171,11 @@ class SharedStation(val base: String, stationId: String) {
 
     fun reportPlayback(sample: PlaybackObservation) {
         http.post("$root/playback", headers, json.encodeToString(PlaybackObservation.serializer(), sample))
+    }
+
+    /** An older service has no such route and throws; the caller ignores it. */
+    fun reportFailure(failure: PlaybackFailure) {
+        http.post("$root/failures", headers, json.encodeToString(PlaybackFailure.serializer(), failure))
     }
 
     companion object {
